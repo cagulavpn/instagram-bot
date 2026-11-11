@@ -123,7 +123,7 @@ HTML_TEMPLATE = """
             <textarea name="messages" rows="3" required placeholder="Salut, Ce faci?"></textarea>
 
             <label>ID-uri Grupuri / Chat-uri (separate prin virgulă):</label>
-            <input type="text" name="groups" required placeholder="Ex: 340282366841710301... nebo ID">
+            <input type="text" name="groups" required placeholder="Ex: 340282366841710301...">
 
             <label>Pauză între cicluri (secunde):</label>
             <input type="number" name="delay" value="2" min="1" required>
@@ -167,27 +167,28 @@ def run_bot(sessionid, messages, groups, delay):
         return
 
     try:
-        threads = client.direct_threads(amount=20)
+        # Am crescut limita la 50 de chat-uri pentru a prinde și grupurile mai vechi
+        threads = client.direct_threads(amount=50)
     except Exception as e:
         log_message(f"❌ Eroare la citirea chat-urilor: {e}")
         bot_status = "Eroare preluare chaturi"
         bot_thread_running = False
         return
 
-    target_ids = [g.strip() for g in groups.split(",") if g.strip()]
+    target_ids = [str(g).strip() for g in groups.split(",") if str(g).strip()]
     selected_threads = []
     
     for thread in threads:
-        t_id = str(thread.id)
+        t_id = str(thread.id).strip()
         title = thread.thread_title if thread.thread_title else "Fără nume"
-        log_message(f"💬 Chat găsit: '{title}' (ID: {t_id})")
         
-        if t_id in target_ids:
-            selected_threads.append(thread)
-            log_message(f"🎯 ID potrivit selectat: {t_id}")
+        for tid in target_ids:
+            if tid == t_id or tid in t_id:
+                selected_threads.append(thread)
+                log_message(f"🎯 ID găsit și potrivit: '{title}' ({t_id})")
 
     if not selected_threads:
-        log_message("⚠️ Niciun ID introdus nu se potrivește cu chaturile găsite!")
+        log_message("⚠️ Niciun ID introdus nu se potrivește cu chaturile găsite în primele 50!")
         bot_status = "Oprit (ID-uri negăsite)"
         bot_thread_running = False
         return
