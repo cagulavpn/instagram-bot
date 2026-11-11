@@ -25,7 +25,7 @@ HTML_TEMPLATE = """
         input, textarea { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; font-size: 16px; }
         button { width: 100%; margin-top: 25px; padding: 12px; background: #0284c7; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
         button:hover { background: #0369a1; }
-        .logs { margin-top: 20px; background: #090d16; padding: 10px; border-radius: 6px; height: 15px; overflow-y: auto; font-family: monospace; font-size: 12px; border: 1px solid #334155; }
+        .logs { margin-top: 20px; background: #090d16; padding: 10px; border-radius: 6px; height: 150px; overflow-y: auto; font-family: monospace; font-size: 12px; border: 1px solid #334155; }
         .status { text-align: center; font-weight: bold; margin-bottom: 10px; color: #4ade80; }
     </style>
 </head>
@@ -66,4 +66,85 @@ HTML_TEMPLATE = """
 
 def log_message(msg):
     global bot_logs
-    bot_logs.append
+    bot_logs.append(msg)
+    if len(bot_logs) > 50:
+        bot_logs.pop(0)
+
+def run_bot(username, password, messages, groups, delay):
+    global bot_status
+    bot_status = "În rulare..."
+    log_message(f"🔑 Încercare de autentificare pentru {username}...")
+    
+    client = Client()
+    client.set_user_agent("Instagram 365.0.0.35.116 Android (33/13; 480dpi; 1080x2340; Samsung; SM-S918B; qcom; sm8550; en_US; 618731234)")
+    
+    try:
+        client.login(username, password)
+        log_message("✅ Autentificat cu succes!")
+    except Exception as e:
+        log_message(f"❌ Eroare conectare: {e}")
+        bot_status = "Eroare autentificare"
+        return
+
+    try:
+        threads = client.direct_threads(amount=20)
+    except Exception as e:
+        log_message(f"❌ Eroare la citirea chat-urilor: {e}")
+        bot_status = "Eroare preluare chaturi"
+        return
+
+    target_groups = [g.strip().lower() for g in groups.split(",") if g.strip()]
+    selected_threads = []
+    
+    for thread in threads:
+        title = thread.thread_title if thread.thread_title else ""
+        for tg in target_groups:
+            if tg in title.lower():
+                selected_threads.append(thread)
+                log_message(f"🎯 Găsit grup potrivit: {title}")
+
+    if not selected_threads:
+        log_message("⚠️ Nu s-au găsit grupuri potrivite cu denumirile specificate!")
+        bot_status = "Oprit (Fără grupuri)"
+        return
+
+    msg_list = [m.strip() for m in messages.split(",") if m.strip()]
+    loop_count = 1
+
+    while True:
+        log_message(f"--- Ciclul nr. {loop_count} ---")
+        for thread in selected_threads:
+            title = thread.thread_title if thread.thread_title else thread.id
+            for msg in msg_list:
+                try:
+                    client.direct_send(msg, thread_ids=[thread.id])
+                    log_message(f"✅ Trimis '{msg}' către '{title}'")
+                except Exception as err:
+                    log_message(f"❌ Eroare trimitere: {err}")
+                time.sleep(1)
+
+        log_message(f"⏳ Aștept {delay} secunde...")
+        loop_count += 1
+        time.sleep(delay)
+
+@app.route('/', methods=['GET', 'HEAD'])
+def index():
+    return render_template_string(HTML_TEMPLATE, status=bot_status, logs=bot_logs)
+
+@app.route('/start', methods=['POST'])
+def start_bot():
+    username = request.form.get('username')
+    password = request.form.get('password')
+    messages = request.form.get('messages')
+    groups = request.form.get('groups')
+    delay = float(request.form.get('delay', 5))
+
+    thread = threading.Thread(target=run_bot, args=(username, password, messages, groups, delay))
+    thread.daemon = True
+    thread.start()
+
+    return render_template_string(HTML_TEMPLATE, status="Pornit...", logs=bot_logs)
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
