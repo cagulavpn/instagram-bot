@@ -8,6 +8,7 @@ app = Flask(__name__)
 
 bot_status = "Oprit"
 bot_logs = []
+bot_thread_running = False
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -15,7 +16,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Bot Control</title>
+    <title>🪽𝐍ïght𝐋ÿfe #CGL Control</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 20px; margin: 0; }
         .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
@@ -30,7 +31,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="card">
-        <h2>🤖 Instagram Bot</h2>
+        <h2>🪽𝐍ïght𝐋ÿfe #CGL</h2>
         <div class="status">Status: {{ status }}</div>
         
         <form action="/start" method="POST">
@@ -44,7 +45,7 @@ HTML_TEMPLATE = """
             <input type="text" name="groups" required placeholder="Grup 1, Grup 2">
 
             <label>Pauză între cicluri (secunde):</label>
-            <input type="number" name="delay" value="5" min="1" required>
+            <input type="number" name="delay" value="2" min="1" required>
 
             <button type="submit">🚀 Pornește Botul</button>
         </form>
@@ -67,19 +68,21 @@ def log_message(msg):
         bot_logs.pop(0)
 
 def run_bot(sessionid, messages, groups, delay):
-    global bot_status
+    global bot_status, bot_thread_running
     bot_status = "În rulare..."
-    log_message("🔑 Autentificare folosind Session ID...")
+    bot_thread_running = True
+    log_message("🔑 Autentificare dedicată cu Session ID...")
     
     client = Client()
     client.set_user_agent("Instagram 319.0.0.31.109 Android (33/13; 480dpi; 1080x2340; Samsung; SM-S918B; qcom; sm8550; en_US; 539583191)")
     
     try:
         client.login_by_sessionid(sessionid.strip())
-        log_message("✅ Conectat cu succes prin sesiune!")
+        log_message("✅ Conectat stabil prin sesiune!")
     except Exception as e:
         log_message(f"❌ Eroare sesiune: {e}")
         bot_status = "Eroare sesiune"
+        bot_thread_running = False
         return
 
     try:
@@ -87,6 +90,7 @@ def run_bot(sessionid, messages, groups, delay):
     except Exception as e:
         log_message(f"❌ Eroare la citirea chat-urilor: {e}")
         bot_status = "Eroare preluare chaturi"
+        bot_thread_running = False
         return
 
     target_groups = [g.strip().lower() for g in groups.split(",") if g.strip()]
@@ -100,28 +104,35 @@ def run_bot(sessionid, messages, groups, delay):
                 log_message(f"🎯 Găsit grup potrivit: {title}")
 
     if not selected_threads:
-        log_message("⚠️ Nu s-au găsit grupuri potrivite cu denumirile specificate!")
+        log_message("⚠️ Nu s-au găsit grupuri potrivite!")
         bot_status = "Oprit (Fără grupuri)"
+        bot_thread_running = False
         return
 
     msg_list = [m.strip() for m in messages.split(",") if m.strip()]
     loop_count = 1
 
-    while True:
+    while bot_thread_running:
+        cycle_start_time = time.time()
         log_message(f"--- Ciclul nr. {loop_count} ---")
+        
         for thread in selected_threads:
             title = thread.thread_title if thread.thread_title else thread.id
             for msg in msg_list:
+                if not bot_thread_running:
+                    break
                 try:
                     client.direct_send(msg, thread_ids=[thread.id])
-                    log_message(f"✅ Trimis '{msg}' către '{title}'")
+                    log_message(f"✅ Trimis către '{title}'")
                 except Exception as err:
                     log_message(f"❌ Eroare trimitere: {err}")
-                time.sleep(1)
+                time.sleep(0.5)
 
-        log_message(f"⏳ Aștept {delay} secunde...")
         loop_count += 1
-        time.sleep(delay)
+        
+        elapsed = time.time() - cycle_start_time
+        sleep_time = max(0.1, delay - elapsed)
+        time.sleep(sleep_time)
 
 @app.route('/', methods=['GET', 'HEAD'])
 def index():
@@ -129,16 +140,20 @@ def index():
 
 @app.route('/start', methods=['POST'])
 def start_bot():
+    global bot_thread_running
+    bot_thread_running = False
+    time.sleep(1)
+
     sessionid = request.form.get('sessionid')
     messages = request.form.get('messages')
     groups = request.form.get('groups')
-    delay = float(request.form.get('delay', 5))
+    delay = float(request.form.get('delay', 2))
 
     thread = threading.Thread(target=run_bot, args=(sessionid, messages, groups, delay))
     thread.daemon = True
     thread.start()
 
-    return render_template_string(HTML_TEMPLATE, status="Pornit...", logs=bot_logs)
+    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Rapid)...", logs=bot_logs)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
