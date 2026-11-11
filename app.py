@@ -126,7 +126,7 @@ HTML_TEMPLATE = """
             <input type="text" name="groups" required placeholder="Ex: Numele grupului sau ID-ul">
 
             <label>Pauză între cicluri (secunde):</label>
-            <input type="number" name="delay" value="2" min="1" required>
+            <input type="number" name="delay" value="5" min="2" required>
 
             <button type="submit">🚀 Pornește Botul</button>
         </form>
@@ -183,14 +183,13 @@ def run_bot(sessionid, messages, groups, delay):
         title_lower = title.lower()
         
         for term in search_terms:
-            # Caută după ID exact/parțial SAU după numele grupului
             if term in t_id or (title and term in title_lower):
                 if thread not in selected_threads:
                     selected_threads.append(thread)
                     log_message(f"🎯 Găsit chat: '{title or 'Fără Nume'}' (ID: {t_id})")
 
     if not selected_threads:
-        log_message("⚠️ Nu s-a găsit niciun grup care să se potrivească cu ce ai scris!")
+        log_message("⚠️ Nu s-a găsit niciun grup potrivit!")
         bot_status = "Oprit (Negăsit)"
         bot_thread_running = False
         return
@@ -209,15 +208,16 @@ def run_bot(sessionid, messages, groups, delay):
                     break
                 try:
                     client.direct_send(msg, thread_ids=[thread.id])
-                    log_message(f"✅ Trimis către '{title}'")
+                    log_message(f"✅ Trimis cu succes către '{title}'")
                 except Exception as err:
                     log_message(f"❌ Eroare trimitere: {err}")
-                time.sleep(0.5)
+                # Pauză de 2 secunde între fiecare mesaj trimis ca să evităm blocarea anti-spam
+                time.sleep(2.0)
 
         loop_count += 1
         
         elapsed = time.time() - cycle_start_time
-        sleep_time = max(0.1, delay - elapsed)
+        sleep_time = max(1.0, delay - elapsed)
         time.sleep(sleep_time)
 
 @app.route('/', methods=['GET', 'POST', 'HEAD'])
@@ -233,13 +233,13 @@ def start_bot():
     sessionid = request.form.get('sessionid')
     messages = request.form.get('messages')
     groups = request.form.get('groups')
-    delay = float(request.form.get('delay', 2))
+    delay = float(request.form.get('delay', 5))
 
     thread = threading.Thread(target=run_bot, args=(sessionid, messages, groups, delay))
     thread.daemon = True
     thread.start()
 
-    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Rapid)...", logs=bot_logs)
+    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Sigur)...", logs=bot_logs)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
