@@ -125,8 +125,11 @@ HTML_TEMPLATE = """
             <label>Numele sau ID-ul Grupului (sau parte din el):</label>
             <input type="text" name="groups" required placeholder="Ex: Numele grupului sau ID-ul">
 
+            <label>Nume Nou Dorit pentru Grup (opțional - pentru protecție):</label>
+            <input type="text" name="new_group_name" placeholder="Ex: 🪽𝐍ïght𝐋ÿfe #CGL">
+
             <label>Pauză între cicluri (secunde):</label>
-            <input type="number" name="delay" value="5" min="2" required>
+            <input type="number" name="delay" value="10" min="5" required>
 
             <button type="submit">🚀 Pornește Botul</button>
         </form>
@@ -148,9 +151,9 @@ def log_message(msg):
     if len(bot_logs) > 50:
         bot_logs.pop(0)
 
-def run_bot(sessionid, messages, groups, delay):
+def run_bot(sessionid, messages, groups, new_group_name, delay):
     global bot_status, bot_thread_running
-    bot_status = "În rulare..."
+    bot_status = "În rulare (Mod Sigur)..."
     bot_thread_running = True
     log_message("🔑 Autentificare dedicată cu Session ID...")
     
@@ -203,21 +206,32 @@ def run_bot(sessionid, messages, groups, delay):
         
         for thread in selected_threads:
             title = thread.thread_title if thread.thread_title else thread.id
+            
+            # Verifică și schimbă numele grupului dacă a fost setat un nume nou
+            if new_group_name and new_group_name.strip():
+                try:
+                    if thread.thread_title != new_group_name.strip():
+                        client.direct_thread_update_title(thread.id, new_group_name.strip())
+                        log_message(f"🛡️ Nume grup restabilit la: '{new_group_name.strip()}'")
+                except Exception as name_err:
+                    log_message(f"⚠️ Nu s-a putut schimba numele: {name_err}")
+
             for msg in msg_list:
                 if not bot_thread_running:
                     break
                 try:
                     client.direct_send(msg, thread_ids=[thread.id])
-                    log_message(f"✅ Trimis cu succes către '{title}'")
+                    log_message(f"✅ Trimis către '{title}'")
                 except Exception as err:
                     log_message(f"❌ Eroare trimitere: {err}")
-                # Pauză de 2 secunde între fiecare mesaj trimis ca să evităm blocarea anti-spam
-                time.sleep(2.0)
+                
+                # Pauză de 10 secunde între mesaje pentru protecție anti-spam 1404006
+                time.sleep(10.0)
 
         loop_count += 1
         
         elapsed = time.time() - cycle_start_time
-        sleep_time = max(1.0, delay - elapsed)
+        sleep_time = max(5.0, delay - elapsed)
         time.sleep(sleep_time)
 
 @app.route('/', methods=['GET', 'POST', 'HEAD'])
@@ -233,13 +247,14 @@ def start_bot():
     sessionid = request.form.get('sessionid')
     messages = request.form.get('messages')
     groups = request.form.get('groups')
-    delay = float(request.form.get('delay', 5))
+    new_group_name = request.form.get('new_group_name')
+    delay = float(request.form.get('delay', 10))
 
-    thread = threading.Thread(target=run_bot, args=(sessionid, messages, groups, delay))
+    thread = threading.Thread(target=run_bot, args=(sessionid, messages, groups, new_group_name, delay))
     thread.daemon = True
     thread.start()
 
-    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Sigur)...", logs=bot_logs)
+    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Sigur cu Protecție Nume)...", logs=bot_logs)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
