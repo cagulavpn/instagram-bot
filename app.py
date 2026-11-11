@@ -18,15 +18,79 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🪽𝐍ïght𝐋ÿfe #CGL Control</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 20px; margin: 0; }
-        .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
-        h2 { color: #38bdf8; text-align: center; margin-top: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(rgba(15, 23, 42, 0.75), rgba(15, 23, 42, 0.85)), 
+                        url('https://i.ibb.co/6R228J5/image-f19b87.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: #f8fafc;
+            padding: 20px;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 25px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+        h2 { color: #38bdf8; text-align: center; margin-top: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
         label { display: block; margin-top: 15px; font-weight: bold; font-size: 14px; color: #94a3b8; }
-        input, textarea { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; font-size: 16px; }
-        button { width: 100%; margin-top: 25px; padding: 12px; background: #0284c7; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #0369a1; }
-        .logs { margin-top: 20px; background: #090d16; padding: 10px; border-radius: 6px; height: 150px; overflow-y: auto; font-family: monospace; font-size: 12px; border: 1px solid #334155; }
-        .status { text-align: center; font-weight: bold; margin-bottom: 10px; color: #4ade80; }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: rgba(15, 23, 42, 0.8);
+            color: white;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #38bdf8;
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+        }
+        button {
+            width: 100%;
+            margin-top: 25px;
+            padding: 12px;
+            background: linear-gradient(135deg, #0284c7, #0369a1);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+            transition: all 0.2s ease;
+        }
+        button:hover {
+            background: linear-gradient(135deg, #0369a1, #075985);
+            transform: translateY(-1px);
+        }
+        .logs {
+            margin-top: 20px;
+            background: rgba(9, 13, 22, 0.9);
+            padding: 12px;
+            border-radius: 8px;
+            height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #334155;
+            color: #38bdf8;
+        }
+        .status { text-align: center; font-weight: bold; margin-bottom: 10px; color: #4ade80; font-size: 15px; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
@@ -105,56 +169,4 @@ def run_bot(sessionid, messages, groups, delay):
 
     if not selected_threads:
         log_message("⚠️ Nu s-au găsit grupuri potrivite!")
-        bot_status = "Oprit (Fără grupuri)"
-        bot_thread_running = False
-        return
-
-    msg_list = [m.strip() for m in messages.split(",") if m.strip()]
-    loop_count = 1
-
-    while bot_thread_running:
-        cycle_start_time = time.time()
-        log_message(f"--- Ciclul nr. {loop_count} ---")
-        
-        for thread in selected_threads:
-            title = thread.thread_title if thread.thread_title else thread.id
-            for msg in msg_list:
-                if not bot_thread_running:
-                    break
-                try:
-                    client.direct_send(msg, thread_ids=[thread.id])
-                    log_message(f"✅ Trimis către '{title}'")
-                except Exception as err:
-                    log_message(f"❌ Eroare trimitere: {err}")
-                time.sleep(0.5)
-
-        loop_count += 1
-        
-        elapsed = time.time() - cycle_start_time
-        sleep_time = max(0.1, delay - elapsed)
-        time.sleep(sleep_time)
-
-@app.route('/', methods=['GET', 'HEAD'])
-def index():
-    return render_template_string(HTML_TEMPLATE, status=bot_status, logs=bot_logs)
-
-@app.route('/start', methods=['POST'])
-def start_bot():
-    global bot_thread_running
-    bot_thread_running = False
-    time.sleep(1)
-
-    sessionid = request.form.get('sessionid')
-    messages = request.form.get('messages')
-    groups = request.form.get('groups')
-    delay = float(request.form.get('delay', 2))
-
-    thread = threading.Thread(target=run_bot, args=(sessionid, messages, groups, delay))
-    thread.daemon = True
-    thread.start()
-
-    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Rapid)...", logs=bot_logs)
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+        bot_
