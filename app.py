@@ -6,9 +6,12 @@ from instagrapi import Client
 
 app = Flask(__name__)
 
-# Variabilă globală pentru a urmări statusul botului
 bot_status = "Oprit"
 bot_logs = []
+
+# Salvăm starea globală pentru a putea prelua codul 2FA dacă e cerut
+current_client = None
+verification_code_input = None
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -25,6 +28,8 @@ HTML_TEMPLATE = """
         input, textarea { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; font-size: 16px; }
         button { width: 100%; margin-top: 25px; padding: 12px; background: #0284c7; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
         button:hover { background: #0369a1; }
+        .btn-code { background: #16a34a; }
+        .btn-code:hover { background: #15803d; }
         .logs { margin-top: 20px; background: #090d16; padding: 10px; border-radius: 6px; height: 150px; overflow-y: auto; font-family: monospace; font-size: 12px; border: 1px solid #334155; }
         .status { text-align: center; font-weight: bold; margin-bottom: 10px; color: #4ade80; }
     </style>
@@ -42,7 +47,7 @@ HTML_TEMPLATE = """
             <input type="password" name="password" required placeholder="parola">
 
             <label>Mesaje (separate prin virgulă):</label>
-            <textarea name="messages" rows="3" required placeholder="Salut, Ce faci?, Cu ce te ajut?"></textarea>
+            <textarea name="messages" rows="3" required placeholder="Salut, Ce faci?"></textarea>
 
             <label>Nume Grupuri / Chat-uri (separate prin virgulă):</label>
             <input type="text" name="groups" required placeholder="Grup 1, Grup 2">
@@ -51,6 +56,14 @@ HTML_TEMPLATE = """
             <input type="number" name="delay" value="5" min="1" required>
 
             <button type="submit">🚀 Pornește Botul</button>
+        </form>
+
+        <hr style="border: 0; border-top: 1px solid #334155; margin: 20px 0;">
+
+        <form action="/verify" method="POST">
+            <label>Cod de verificare / 2FA (dacă se cere):</label>
+            <input type="text" name="code" placeholder="Introdu codul primit">
+            <button type="submit" class="btn-code">📥 Trimite Codul</button>
         </form>
 
         <h3>Jurnal activitate:</h3>
@@ -71,15 +84,39 @@ def log_message(msg):
         bot_logs.pop(0)
 
 def run_bot(username, password, messages, groups, delay):
-    global bot_status
+    global bot_status, current_client, verification_code_input
     bot_status = "În rulare..."
     log_message(f"🔑 Încercare de autentificare pentru {username}...")
     
     client = Client()
-    client.set_user_agent("Instagram 365.0.0.35.116 Android (33/13; 480dpi; 1080x2340; Samsung; SM-S918B; qcom; sm8550; en_US; 618731234)")
-    
+    # Folosim un User-Agent actualizat pentru a evita eroarea de versiune veche
+    client.set_user_agent("Instagram 319.0.0.31.109 Android (33/13; 480dpi; 1080x2340; Samsung; SM-S918B; qcom; sm8550; en_US; 539583191)")
+    current_client = client
+
     try:
-        client.login(username, password)
+        # Funcție personalizată de verificare 2FA / Challenge prin cod primit pe email/SMS
+        def handle_challenge(client, username, choice):
+            log_message(f"🔒 Instagram cere verificare de securitate suplimentară.")
+            log_message(f"📩 Introdu codul primit în căsuța de dedesubt și apasă 'Trimite Codul'.")
+            
+            global verification_code_input
+            verification_code_input = None
+            
+            # Așteptăm ca utilizatorul să introducă codul prin interfața web
+            while verification_code_input is None:
+                time.sleep(1)
+                
+            return verification_code_input
+
+        # Setăm handler-ul de challenge pentru instagrapi
+        client.challenge_code_handler = handle_challenge
+        
+        login_success = client.login(username, password)
+        if not login_success:
+            log_message("❌ Autentificarea a eșuat.")
+            bot_status = "Eroare autentificare"
+            return
+            
         log_message("✅ Autentificat cu succes!")
     except Exception as e:
         log_message(f"❌ Eroare conectare: {e}")
@@ -144,6 +181,15 @@ def start_bot():
     thread.start()
 
     return render_template_string(HTML_TEMPLATE, status="Pornit...", logs=bot_logs)
+
+@app.route('/verify', methods=['POST'])
+def verify_code():
+    global verification_code_input
+    code = request.form.get('code')
+    if code:
+        verification_code_input = code.strip()
+        log_message(f"📥 Codul de verificare a fost trimis către bot...")
+    return render_template_string(HTML_TEMPLATE, status=bot_status, logs=bot_logs)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
