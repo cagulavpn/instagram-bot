@@ -20,8 +20,7 @@ HTML_TEMPLATE = """
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(rgba(15, 23, 42, 0.75), rgba(15, 23, 42, 0.85)), 
-                        url('https://i.ibb.co/6R228J5/image-f19b87.jpg') no-repeat center center fixed;
+            background: url('https://i.ibb.co/6R228J5/image-f19b87.jpg') no-repeat center center fixed;
             background-size: cover;
             color: #f8fafc;
             padding: 20px;
@@ -30,19 +29,37 @@ HTML_TEMPLATE = """
             display: flex;
             justify-content: center;
             align-items: center;
+            position: relative;
+        }
+        /* Textul CAGULĂ în fundal */
+        .bg-text {
+            position: fixed;
+            top: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 4rem;
+            font-weight: 900;
+            letter-spacing: 6px;
+            color: #ffffff;
+            text-transform: uppercase;
+            text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 30px rgba(56, 189, 248, 0.6), 0 2px 5px rgba(0, 0, 0, 0.9);
+            z-index: 1;
+            pointer-events: none;
+            text-align: center;
+            width: 100%;
         }
         .card {
-            background: rgba(30, 41, 59, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            position: relative;
+            z-index: 2;
+            background: rgba(15, 23, 42, 0.93);
             padding: 25px;
             border-radius: 16px;
             width: 100%;
             max-width: 500px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
-            border: 1px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.9);
+            border: 1px solid rgba(56, 189, 248, 0.5);
         }
-        h2 { color: #38bdf8; text-align: center; margin-top: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        h2 { color: #38bdf8; text-align: center; margin-top: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
         label { display: block; margin-top: 15px; font-weight: bold; font-size: 14px; color: #94a3b8; }
         input, textarea {
             width: 100%;
@@ -50,7 +67,7 @@ HTML_TEMPLATE = """
             margin-top: 5px;
             border-radius: 8px;
             border: 1px solid #334155;
-            background: rgba(15, 23, 42, 0.8);
+            background: rgba(15, 23, 42, 0.95);
             color: white;
             box-sizing: border-box;
             font-size: 16px;
@@ -58,7 +75,7 @@ HTML_TEMPLATE = """
         input:focus, textarea:focus {
             outline: none;
             border-color: #38bdf8;
-            box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
         }
         button {
             width: 100%;
@@ -71,7 +88,7 @@ HTML_TEMPLATE = """
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.5);
             transition: all 0.2s ease;
         }
         button:hover {
@@ -80,7 +97,7 @@ HTML_TEMPLATE = """
         }
         .logs {
             margin-top: 20px;
-            background: rgba(9, 13, 22, 0.9);
+            background: rgba(5, 8, 15, 0.98);
             padding: 12px;
             border-radius: 8px;
             height: 150px;
@@ -90,10 +107,11 @@ HTML_TEMPLATE = """
             border: 1px solid #334155;
             color: #38bdf8;
         }
-        .status { text-align: center; font-weight: bold; margin-bottom: 10px; color: #4ade80; font-size: 15px; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+        .status { text-align: center; font-weight: bold; margin-bottom: 10px; color: #4ade80; font-size: 15px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
     </style>
 </head>
 <body>
+    <div class="bg-text">CAGULĂ</div>
     <div class="card">
         <h2>🪽𝐍ïght𝐋ÿfe #CGL</h2>
         <div class="status">Status: {{ status }}</div>
