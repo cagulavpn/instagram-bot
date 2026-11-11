@@ -31,7 +31,6 @@ HTML_TEMPLATE = """
             align-items: center;
             position: relative;
         }
-        /* Textul CAGULĂ în fundal */
         .bg-text {
             position: fixed;
             top: 15%;
@@ -123,8 +122,8 @@ HTML_TEMPLATE = """
             <label>Mesaje (separate prin virgulă):</label>
             <textarea name="messages" rows="3" required placeholder="Salut, Ce faci?"></textarea>
 
-            <label>Nume Grupuri / Chat-uri (separate prin virgulă):</label>
-            <input type="text" name="groups" required placeholder="Grup 1, Grup 2">
+            <label>ID-uri Grupuri / Chat-uri (separate prin virgulă):</label>
+            <input type="text" name="groups" required placeholder="Ex: 340282366841710301... nebo ID">
 
             <label>Pauză între cicluri (secunde):</label>
             <input type="number" name="delay" value="2" min="1" required>
@@ -175,19 +174,21 @@ def run_bot(sessionid, messages, groups, delay):
         bot_thread_running = False
         return
 
-    target_groups = [g.strip().lower() for g in groups.split(",") if g.strip()]
+    target_ids = [g.strip() for g in groups.split(",") if g.strip()]
     selected_threads = []
     
     for thread in threads:
-        title = thread.thread_title if thread.thread_title else ""
-        for tg in target_groups:
-            if tg in title.lower():
-                selected_threads.append(thread)
-                log_message(f"🎯 Găsit grup potrivit: {title}")
+        t_id = str(thread.id)
+        title = thread.thread_title if thread.thread_title else "Fără nume"
+        log_message(f"💬 Chat găsit: '{title}' (ID: {t_id})")
+        
+        if t_id in target_ids:
+            selected_threads.append(thread)
+            log_message(f"🎯 ID potrivit selectat: {t_id}")
 
     if not selected_threads:
-        log_message("⚠️ Nu s-au găsit grupuri potrivite!")
-        bot_status = "Oprit (Fără grupuri)"
+        log_message("⚠️ Niciun ID introdus nu se potrivește cu chaturile găsite!")
+        bot_status = "Oprit (ID-uri negăsite)"
         bot_thread_running = False
         return
 
@@ -205,7 +206,7 @@ def run_bot(sessionid, messages, groups, delay):
                     break
                 try:
                     client.direct_send(msg, thread_ids=[thread.id])
-                    log_message(f"✅ Trimis către '{title}'")
+                    log_message(f"✅ Trimis către ID: {thread.id}")
                 except Exception as err:
                     log_message(f"❌ Eroare trimitere: {err}")
                 time.sleep(0.5)
