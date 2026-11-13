@@ -47,7 +47,9 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
             try:
                 threads = client.direct_threads(amount=20)
                 for thread in threads:
-                    thread_name = thread.title if thread.title else ""
+                    # Preluare sigură a titlului grupului (compatibilă cu orice versiune instagrapi)
+                    thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
+                    
                     if target_group.lower() in thread_name.lower() or target_group == str(thread.id):
                         chat_thread = thread
                         break
