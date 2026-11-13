@@ -1,5 +1,6 @@
 import os
 import time
+import random
 import threading
 from flask import Flask, request, render_template_string
 from instagrapi import Client
@@ -16,7 +17,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🪽𝐍ïght𝐋ÿfe #CGL Control</title>
+    <title>🪽𝐍ïght𝐋ÿfe #CGL Control (Mod Dinamic 250 Msj)</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -116,8 +117,8 @@ HTML_TEMPLATE = """
         <div class="status">Status: {{ status }}</div>
         
         <form action="/start" method="POST">
-            <label>Instagram Session ID (cookie):</label>
-            <input type="text" name="sessionid" required placeholder="Lipește codul de sessionid aici">
+            <label>Session ID-uri (separate prin virgulă):</label>
+            <textarea name="sessionids" rows="3" required placeholder="cookie1, cookie2, cookie3..."></textarea>
 
             <label>Mesaje (separate prin virgulă):</label>
             <textarea name="messages" rows="3" required placeholder="Salut, Ce faci?"></textarea>
@@ -128,10 +129,7 @@ HTML_TEMPLATE = """
             <label>Nume Nou Dorit pentru Grup (opțional - pentru protecție):</label>
             <input type="text" name="new_group_name" placeholder="Ex: 🪽𝐍ïght𝐋ÿfe #CGL">
 
-            <label>Pauză între cicluri (secunde):</label>
-            <input type="number" name="delay" value="10" min="5" required>
-
-            <button type="submit">🚀 Pornește Botul</button>
+            <button type="submit">🚀 Pornește Rotația Dinamică (250 msj)</button>
         </form>
 
         <h3>Jurnal activitate:</h3>
@@ -148,91 +146,122 @@ HTML_TEMPLATE = """
 def log_message(msg):
     global bot_logs
     bot_logs.append(msg)
-    if len(bot_logs) > 50:
+    if len(bot_logs) > 60:
         bot_logs.pop(0)
 
-def run_bot(sessionid, messages, groups, new_group_name, delay):
+def run_bot(sessionids_raw, messages, groups, new_group_name):
     global bot_status, bot_thread_running
-    bot_status = "În rulare (Mod Sigur)..."
+    bot_status = "În rulare (Mod Dinamic 250 msj)..."
     bot_thread_running = True
-    log_message("🔑 Autentificare dedicată cu Session ID...")
     
-    client = Client()
-    client.set_user_agent("Instagram 319.0.0.31.109 Android (33/13; 480dpi; 1080x2340; Samsung; SM-S918B; qcom; sm8550; en_US; 539583191)")
-    
-    try:
-        client.login_by_sessionid(sessionid.strip())
-        log_message("✅ Conectat stabil prin sesiune!")
-    except Exception as e:
-        log_message(f"❌ Eroare sesiune: {e}")
-        bot_status = "Eroare sesiune"
+    sessions = [s.strip() for s in sessionids_raw.split(",") if s.strip()]
+    if not sessions:
+        log_message("❌ Niciun Session ID valid introdus!")
+        bot_status = "Eroare (Fără conturi)"
         bot_thread_running = False
         return
 
-    try:
-        threads = client.direct_threads(amount=50)
-    except Exception as e:
-        log_message(f"❌ Eroare la citirea chat-urilor: {e}")
-        bot_status = "Eroare preluare chaturi"
-        bot_thread_running = False
-        return
-
-    search_terms = [g.strip().lower() for g in groups.split(",") if g.strip()]
-    selected_threads = []
-    
-    for thread in threads:
-        t_id = str(thread.id).strip()
-        title = thread.thread_title if thread.thread_title else ""
-        title_lower = title.lower()
-        
-        for term in search_terms:
-            if term in t_id or (title and term in title_lower):
-                if thread not in selected_threads:
-                    selected_threads.append(thread)
-                    log_message(f"🎯 Găsit chat: '{title or 'Fără Nume'}' (ID: {t_id})")
-
-    if not selected_threads:
-        log_message("⚠️ Nu s-a găsit niciun grup potrivit!")
-        bot_status = "Oprit (Negăsit)"
-        bot_thread_running = False
-        return
-
+    log_message(f"🔑 Încărcate {len(sessions)} conturi în sistem.")
     msg_list = [m.strip() for m in messages.split(",") if m.strip()]
+    search_terms = [g.strip().lower() for g in groups.split(",") if g.strip()]
+    
     loop_count = 1
 
     while bot_thread_running:
-        cycle_start_time = time.time()
-        log_message(f"--- Ciclul nr. {loop_count} ---")
+        log_message(f"--- Ciclu global nr. {loop_count} ---")
         
-        for thread in selected_threads:
-            title = thread.thread_title if thread.thread_title else thread.id
-            
-            # Verifică și schimbă numele grupului dacă a fost setat un nume nou
-            if new_group_name and new_group_name.strip():
-                try:
-                    if thread.thread_title != new_group_name.strip():
-                        client.direct_thread_update_title(thread.id, new_group_name.strip())
-                        log_message(f"🛡️ Nume grup restabilit la: '{new_group_name.strip()}'")
-                except Exception as name_err:
-                    log_message(f"⚠️ Nu s-a putut schimba numele: {name_err}")
-
-            for msg in msg_list:
-                if not bot_thread_running:
-                    break
-                try:
-                    client.direct_send(msg, thread_ids=[thread.id])
-                    log_message(f"✅ Trimis către '{title}'")
-                except Exception as err:
-                    log_message(f"❌ Eroare trimitere: {err}")
+        for idx, sessionid in enumerate(sessions):
+            if not bot_thread_running:
+                break
                 
-                # Pauză de 10 secunde între mesaje pentru protecție anti-spam 1404006
-                time.sleep(10.0)
+            account_num = idx + 1
+            log_message(f"🔄 Activare Cont #{account_num} (Țintă: 250 mesaje)...")
+            
+            client = Client()
+            client.set_user_agent("Instagram 319.0.0.31.109 Android (33/13; 480dpi; 1080x2340; Samsung; SM-S918B; qcom; sm8550; en_US; 539583191)")
+            
+            # Încercăm logarea. Dacă contul a picat sau dă eroare, îl sărim automat.
+            try:
+                client.login_by_sessionid(sessionid)
+                log_message(f"✅ Contul #{account_num} conectat cu succes!")
+            except Exception as e:
+                log_message(f"❌ CONTUL #{account_num} A PICAT / EROARE LOGARE: {e}. Trec la următorul!")
+                continue
+
+            try:
+                threads = client.direct_threads(amount=30)
+            except Exception as e:
+                log_message(f"❌ Eroare la citirea chat-urilor pentru Cont #{account_num}: {e}. Trec mai departe!")
+                continue
+
+            selected_threads = []
+            for thread in threads:
+                t_id = str(thread.id).strip()
+                title = thread.thread_title if thread.thread_title else ""
+                title_lower = title.lower()
+                
+                for term in search_terms:
+                    if term in t_id or (title and term in title_lower):
+                        if thread not in selected_threads:
+                            selected_threads.append(thread)
+
+            if not selected_threads:
+                log_message(f"⚠️ Contul #{account_num} nu a găsit grupul. Trecem la următorul cont.")
+                continue
+
+            messages_sent_by_account = 0
+            target_limit = 250
+            consecutive_errors = 0
+
+            while messages_sent_by_account < target_limit and bot_thread_running:
+                for thread in selected_threads:
+                    if messages_sent_by_account >= target_limit or not bot_thread_running:
+                        break
+                        
+                    title = thread.thread_title if thread.thread_title else thread.id
+                    
+                    # Protecție nume grup
+                    if new_group_name and new_group_name.strip():
+                        try:
+                            if thread.thread_title != new_group_name.strip():
+                                client.direct_thread_update_title(thread.id, new_group_name.strip())
+                                log_message(f"🛡️ [Cont #{account_num}] Nume grup menținut!")
+                        except Exception:
+                            pass
+
+                    msg = random.choice(msg_list)
+
+                    try:
+                        # Trimitere mesaj direct
+                        client.direct_send(msg, thread_ids=[thread.id])
+                        messages_sent_by_account += 1
+                        consecutive_errors = 0 # Resetează contorul de erori dacă a trimis cu succes
+                        log_message(f"✅ [Cont #{account_num}] Mesaj {messages_sent_by_account}/250 trimis")
+                    except Exception as err:
+                        consecutive_errors += 1
+                        log_message(f"⚠️ [Cont #{account_num}] Eroare trimitere ({consecutive_errors}/5): {err}")
+                        
+                        # Dacă contul primește erori consecutive (de ex. a luat ban pe mesaje), 
+                        # abandonăm acest cont ca să nu piardă timp și trecem instant la următorul!
+                        if consecutive_errors >= 5:
+                            log_message(f"🚨 Contul #{account_num} pare blocat/limitat (prea multe erori). Salt forțat la următorul cont!")
+                            break
+                    
+                    # Secunde variabile/aleatoare între mesaje (1, 2, 3, 5, 7 secunde etc.)
+                    # O valoare aleatorie între 1.5 și 6.5 secunde asigură că cele 250 de mesaje se duc în ~10 minute.
+                    random_delay = random.uniform(1.5, 6.5)
+                    time.sleep(random_delay)
+
+                # Dacă s-au strâns prea multe erori, ieșim din bucla contului curent
+                if consecutive_errors >= 5:
+                    break
+
+            log_message(f"🏁 Contul #{account_num} a terminat tura (sau a fost schimbat). Trecem la următorul...")
+            time.sleep(5)
 
         loop_count += 1
-        
-        elapsed = time.time() - cycle_start_time
-        sleep_time = max(5.0, delay - elapsed)
-        time.sleep(sleep_time)
+        log_message("⏳ Rotație completă finalizată. Pauză scurtă înainte de a relua ciclul...")
+        time.sleep(20)
 
 @app.route('/', methods=['GET', 'POST', 'HEAD'])
 def index():
@@ -244,17 +273,16 @@ def start_bot():
     bot_thread_running = False
     time.sleep(1)
 
-    sessionid = request.form.get('sessionid')
+    sessionids = request.form.get('sessionids')
     messages = request.form.get('messages')
     groups = request.form.get('groups')
     new_group_name = request.form.get('new_group_name')
-    delay = float(request.form.get('delay', 10))
 
-    thread = threading.Thread(target=run_bot, args=(sessionid, messages, groups, new_group_name, delay))
+    thread = threading.Thread(target=run_bot, args=(sessionids, messages, groups, new_group_name))
     thread.daemon = True
     thread.start()
 
-    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Sigur cu Protecție Nume)...", logs=bot_logs)
+    return render_template_string(HTML_TEMPLATE, status="Pornit (Mod Dinamic 250 mesaje / Fail-Safe Activ)...", logs=bot_logs)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
