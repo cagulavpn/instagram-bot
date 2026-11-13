@@ -21,19 +21,26 @@ def log_message(message):
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
     client = Client()
-    client.delay_range = [2, 5]
+    # Setează un delay de bază mai mare pentru a mima un utilizator lent
+    client.delay_range = [5, 10]
 
-    log_message(f"[{bot_name}] Încercare de autentificare cu Session ID...")
+    log_message(f"[{bot_name}] Conectare securizată în curs...")
     try:
         client.login_by_sessionid(session_id.strip())
-        log_message(f"[{bot_name}] Autentificare reușită!")
+        log_message(f"[{bot_name}] Conexiune stabilită cu succes sub radar!")
     except Exception as e:
-        log_message(f"[{bot_name}] ❌ Eroare la autentificare: {str(e)}")
+        log_message(f"[{bot_name}] ❌ Sesiune eșuată: {str(e)}")
         return
 
     msg_index = 0
+    messages_sent_in_session = 0
+
     while bot_status["running"]:
-        for target_group in group_targets:
+        # Amestecăm grupurile aleatoriu la fiecare ciclu să nu pară un șablon fix
+        shuffled_groups = list(group_targets)
+        random.shuffle(shuffled_groups)
+
+        for target_group in shuffled_groups:
             if not bot_status["running"]:
                 break
             
@@ -41,15 +48,13 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
             if not target_group:
                 continue
 
-            log_message(f"[{bot_name}] Caut grupul: '{target_group}'...")
+            log_message(f"[{bot_name}] Caut ținta: '{target_group}'...")
             chat_thread = None
             
             try:
-                threads = client.direct_threads(amount=20)
+                threads = client.direct_threads(amount=25)
                 for thread in threads:
-                    # Preluare sigură a titlului grupului (compatibilă cu orice versiune instagrapi)
                     thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
-                    
                     if target_group.lower() in thread_name.lower() or target_group == str(thread.id):
                         chat_thread = thread
                         break
@@ -59,17 +64,26 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
                     msg_index += 1
                     
                     client.direct_send(message_text, thread_ids=[chat_thread.id])
-                    log_message(f"[{bot_name}] ✉️ Trimis pe '{target_group}': {message_text[:30]}...")
+                    messages_sent_in_session += 1
+                    log_message(f"[{bot_name}] 🎯 Lovitură reușită pe '{target_group}' (Total cont: {messages_sent_in_session})")
                 else:
-                    log_message(f"[{bot_name}] ⚠️ Grupul '{target_group}' nu a fost găsit în inbox.")
+                    log_message(f"[{bot_name}] ⚠️ Ținta '{target_group}' negăsită în flux.")
             
             except Exception as e:
-                log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
+                log_message(f"[{bot_name}] ⚠️ Alertele sistemului: {str(e)}")
 
-            sleep_time = random.uniform(3.0, 7.0)
-            time.sleep(sleep_time)
+            # CAMUFLAJ NIVEL 1: Pauză aleatorie mare (între 15 și 35 de secunde - ritm de om relaxat)
+            stealth_sleep = random.uniform(15.0, 35.0)
             
-        time.sleep(5)
+            # CAMUFLAJ NIVEL 2: Pauză de oboseală la fiecare 30 de mesaje trimise
+            if messages_sent_in_session % 30 == 0:
+                fatigue_pause = random.uniform(60.0, 120.0)
+                log_message(f"[{bot_name}] 🛡️ Prag de 30 de mesaje atins! Contul ia o pauză de respirație de {int(fatigue_pause)} secunde...")
+                time.sleep(fatigue_pause)
+            else:
+                time.sleep(stealth_sleep)
+            
+        time.sleep(10)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -87,25 +101,25 @@ def index():
             messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
             
             if not sessions:
-                log_message("❌ Eroare: Nu ai adăugat niciun Session ID!")
+                log_message("❌ Eroare: Lipsesc Session ID-urile!")
             elif not groups:
-                log_message("❌ Eroare: Nu ai adăugat niciun grup!")
+                log_message("❌ Eroare: Nu ai setat nicio țintă!")
             elif not messages:
-                log_message("❌ Eroare: Nu ai adăugat niciun mesaj!")
+                log_message("❌ Eroare: Nu ai adăugat mesaje!")
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Pornire sistem cu {len(sessions)} conturi pe {len(groups)} grupuri în paralel!")
+                log_message(f"🕶️ Sistemul Stealth a pornit cu {len(sessions)} conturi în paralel pe {len(groups)} grupuri.")
                 
                 for idx, session in enumerate(sessions, start=1):
-                    bot_name = f"Cont #{idx}"
+                    bot_name = f"Agent #{idx}"
                     t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name))
                     t.daemon = True
                     t.start()
                     
         elif action == "stop":
             bot_status["running"] = False
-            log_message("⏹️ S-a cerut oprirea boților.")
+            log_message("⏹️ S-a ordonat oprirea agenților.")
 
     return render_template_string(HTML_TEMPLATE, logs=logs, running=bot_status["running"])
 
@@ -114,38 +128,38 @@ HTML_TEMPLATE = """
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
-    <title>Instagram Multi-Bot Paralel</title>
+    <title>Instagram Stealth Multi-Bot</title>
     <style>
-        body { background: #0f172a; color: #f8fafc; font-family: monospace; padding: 20px; }
-        .container { max-width: 800px; margin: auto; background: #1e293b; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        textarea, input { width: 100%; background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 10px; margin-top: 5px; margin-bottom: 15px; border-radius: 4px; box-sizing: border-box; }
+        body { background: #090d16; color: #38bdf8; font-family: monospace; padding: 20px; }
+        .container { max-width: 800px; margin: auto; background: #111827; padding: 20px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        textarea, input { width: 100%; background: #030712; color: #e2e8f0; border: 1px solid #374151; padding: 10px; margin-top: 5px; margin-bottom: 15px; border-radius: 4px; box-sizing: border-box; }
         button { padding: 12px 20px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; text-transform: uppercase; }
-        .btn-start { background: #22c55e; color: white; }
+        .btn-start { background: #10b981; color: white; }
         .btn-stop { background: #ef4444; color: white; }
-        .logs { background: #020617; padding: 15px; height: 300px; overflow-y: scroll; border: 1px solid #334155; font-size: 12px; border-radius: 4px; white-space: pre-wrap; }
+        .logs { background: #020617; padding: 15px; height: 300px; overflow-y: scroll; border: 1px solid #1f2937; font-size: 12px; border-radius: 4px; white-space: pre-wrap; color: #34d399; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>👑 Instagram Multi-Bot Paralel (Render)</h2>
+        <h2>🕶️ Instagram Stealth Multi-Bot (Anti-Ban Mode)</h2>
         <form method="POST">
             <label><b>Session ID-uri (separate prin virgulă):</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie1, cookie2..."></textarea>
             
-            <label><b>Grupuri (câte unul pe fiecare rând):</b></label>
-            <textarea name="groups" rows="3" placeholder="Nume grup 1&#10;Nume grup 2"></textarea>
+            <label><b>Grupuri (câte unul pe rând):</b></label>
+            <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2"></textarea>
 
-            <label><b>Mesaje (câte unul pe fiecare rând):</b></label>
+            <label><b>Mesaje (câte unul pe rând):</b></label>
             <textarea name="messages" rows="4" placeholder="Mesaj 1&#10;Mesaj 2"></textarea>
 
             {% if running %}
-                <button type="submit" name="action" value="stop" class="btn-stop">Oprește Toate Conturile</button>
+                <button type="submit" name="action" value="stop" class="btn-stop">Oprește Toți Agenții</button>
             {% else %}
-                <button type="submit" name="action" value="start" class="btn-start">Pornește Boții în Paralel</button>
+                <button type="submit" name="action" value="start" class="btn-start">Pornește Sistemul Stealth</button>
             {% endif %}
         </form>
 
-        <h3 style="margin-top: 25px;">Jurnal activitate în timp real:</h3>
+        <h3 style="margin-top: 25px; color: #f3f4f6;">Jurnal operațional invizibil:</h3>
         <div class="logs">{% for log in logs %}{{ log }}&#10;{% endfor %}</div>
     </div>
 </body>
