@@ -7,7 +7,6 @@ from instagrapi import Client
 
 app = Flask(__name__)
 
-# Stare globală pentru loguri și activitatea boților
 logs = []
 bot_status = {"running": False}
 
@@ -16,16 +15,12 @@ def log_message(message):
     timestamp = time.strftime("[%H:%M:%S]")
     entry = f"{timestamp} {message}"
     logs.append(entry)
-    # Păstrăm ultimele 100 de loguri să nu ocupe multă memorie
     if len(logs) > 100:
         logs.pop(0)
     print(entry)
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
-    """ Funcția care rulează pe un fir separat pentru fiecare cont în parte """
     client = Client()
-    
-    # Setează un delay de siguranță pentru cereri
     client.delay_range = [2, 5]
 
     log_message(f"[{bot_name}] Încercare de autentificare cu Session ID...")
@@ -36,7 +31,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
         log_message(f"[{bot_name}] ❌ Eroare la autentificare: {str(e)}")
         return
 
-    # Ciclul infinit de trimitere mesaje pe grupuri
     msg_index = 0
     while bot_status["running"]:
         for target_group in group_targets:
@@ -51,10 +45,8 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
             chat_thread = None
             
             try:
-                # Caută în mesajele directe
                 threads = client.direct_threads(amount=20)
                 for thread in threads:
-                    # Verifică dacă numele grupului conține textul căutat sau ID-ul
                     thread_name = thread.title if thread.title else ""
                     if target_group.lower() in thread_name.lower() or target_group == str(thread.id):
                         chat_thread = thread
@@ -72,11 +64,9 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
             except Exception as e:
                 log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
 
-            # Pauză umană aleatorie între mesaje (între 3 și 7 secunde)
             sleep_time = random.uniform(3.0, 7.0)
             time.sleep(sleep_time)
             
-        # Pauză scurtă între iterările listei de grupuri
         time.sleep(5)
 
 @app.route("/", methods=["GET", "POST"])
@@ -90,7 +80,6 @@ def index():
             groups_raw = request.form.get("groups", "")
             messages_raw = request.form.get("messages", "")
             
-            # Împarte datele după virgulă sau linie nouă
             sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
             groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
             messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
@@ -106,7 +95,6 @@ def index():
                 logs.clear()
                 log_message(f"🚀 Pornire sistem cu {len(sessions)} conturi pe {len(groups)} grupuri în paralel!")
                 
-                # Pornește câte un fir (thread) separat pentru fiecare cont
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Cont #{idx}"
                     t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name))
@@ -158,10 +146,6 @@ HTML_TEMPLATE = """
         <h3 style="margin-top: 25px;">Jurnal activitate în timp real:</h3>
         <div class="logs">{% for log in logs %}{{ log }}&#10;{% endfor %}</div>
     </div>
-    <script>
-        // Auto-refresh la fiecare 3 secunde pentru a vedea logurile noi
-        setTimeout(function(){ location.reload(); }, 3000);
-    </script>
 </body>
 </html>
 """
