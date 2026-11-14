@@ -1,8 +1,7 @@
 import os
 import time
 import random
-import asyncio
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, render_template_string, request
 from instagrapi import Client
 
@@ -17,31 +16,32 @@ def log_message(message):
     timestamp = time.strftime("[%H:%M:%S.%f]")[:-3]
     entry = f"{timestamp} {message}"
     logs.append(entry)
-    if len(logs) > 150:
+    if len(logs) > 200:
         logs.pop(0)
     print(entry)
 
-async def async_send_message(client, thread_id, message_text, bot_name):
+def fire_and_forget(client, thread_id, message_text, bot_name):
+    # BLIND FIRE: Trimitem cererea pur și simplu, fără să ne pese de răspuns sau eroare
     try:
-        # Rulăm cererea blocantă în background asincron prin asyncio.to_thread
-        await asyncio.to_thread(client.direct_send, message_text, thread_ids=[thread_id])
-        log_message(f"[{bot_name}] ⚡ ASYNC-FIRE: Mesaj livrat instant!")
+        client.direct_send(message_text, thread_ids=[thread_id])
+        log_message(f"[{bot_name}] 🎯 [BLIND HIT] Mesaj expediat în flux!")
     except Exception as e:
-        log_message(f"[{bot_name}] ⚠️ Instagram Firewall / Limit: {str(e)}")
+        # Prindem orice eroare de la Instagram (inclusiv rate limit / block) dar mergem înainte
+        log_message(f"[{bot_name}] ⚡ [FIRE] Pachet trimis (Server Meta a răspuns: {str(e)[:30]}...)")
 
-async def run_async_bot(session_id, group_targets, messages_list, bot_name):
+def run_blind_bot(session_id, group_targets, messages_list, bot_name):
     client = Client()
     client.delay_range = [0, 0]
 
-    log_message(f"[{bot_name}] Conectare Async Engine...")
+    log_message(f"[{bot_name}] Autentificare pentru Modul Mitralieră...")
     try:
-        await asyncio.to_thread(client.login_by_sessionid, session_id.strip())
-        log_message(f"[{bot_name}] Conexiune Async stabilită cu succes!")
+        client.login_by_sessionid(session_id.strip())
+        log_message(f"[{bot_name}] Conexiune stabilită! Armare completă.")
     except Exception as e:
         log_message(f"[{bot_name}] ❌ Sesiune eșuată: {str(e)}")
         return
 
-    # Colectarea rapidă a ID-urilor
+    # Colectăm ID-urile grupurilor instant
     active_threads = []
     for target_group in group_targets:
         target_group = target_group.strip()
@@ -51,13 +51,13 @@ async def run_async_bot(session_id, group_targets, messages_list, bot_name):
         chat_thread = None
         if target_group in group_id_cache:
             try:
-                chat_thread = await asyncio.to_thread(client.direct_thread, group_id_cache[target_group])
+                chat_thread = client.direct_thread(group_id_cache[target_group])
             except:
                 pass
         
         if not chat_thread:
             try:
-                threads = await asyncio.to_thread(client.direct_threads, amount=30)
+                threads = client.direct_threads(amount=30)
                 for thread in threads:
                     thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
                     if target_group.lower() in thread_name.lower() or target_group == str(thread.id):
@@ -65,42 +65,35 @@ async def run_async_bot(session_id, group_targets, messages_list, bot_name):
                         group_id_cache[target_group] = thread.id
                         break
             except Exception as e:
-                log_message(f"[{bot_name}] Eroare căutare: {str(e)}")
+                log_message(f"[{bot_name}] Eroare căutare grup: {str(e)}")
         
         if chat_thread:
             active_threads.append(chat_thread.id)
-            log_message(f"[{bot_name}] 🎯 Țintă pregătită async: {target_group}")
+            log_message(f"[{bot_name}] 🎯 Țintă fixată: {target_group}")
 
     if not active_threads:
         log_message(f"[{bot_name}] ❌ Nicio țintă validă.")
         return
 
-    log_message(f"[{bot_name}] 🚀 Lansare flux Async Masiv (Batch Concurrency)...")
+    log_message(f"[{bot_name}] 🔥 ATAC BLIND FIRE DECLANȘAT (Fără rețineri)!")
     
     msg_index = 0
-    while bot_status["running"] and msg_index < len(messages_list) * len(active_threads) * 10:
-        tasks = []
-        # Construim un batch complet de mesaje trimise simultan
-        for thread_id in active_threads:
-            if not bot_status["running"]:
-                break
+    # Deschidem un pool uriaș de 50 de fire paralele pentru viteză brută
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        while bot_status["running"]:
+            for thread_id in active_threads:
+                if not bot_status["running"]:
+                    break
+                
+                message_text = messages_list[msg_index % len(messages_list)]
+                msg_index += 1
+                
+                # ARUNCĂM CEREREA ÎN REȚEA FĂRĂ SĂ AȘTEPTĂM NIMIC (Non-blocking submit)
+                executor.submit(fire_and_forget, client, thread_id, message_text, bot_name)
             
-            message_text = messages_list[msg_index % len(messages_list)]
-            msg_index += 1
-            
-            # Adăugăm task-ul în lista asincronă
-            tasks.append(async_send_message(client, thread_id, message_text, bot_name))
-        
-        if tasks:
-            # Lansăm toate cererile în același timp prin asyncio.gather
-            await asyncio.gather(*tasks)
-            # Pauză microscopică între batch-uri (10 milisecunde)
-            await asyncio.sleep(0.01)
+            # Fără nicio pauză (0 secunde). Lăsăm procesorul și rețeaua să zboare la maximum.
 
-    log_message(f"[{bot_name}] 🏁 Sesiunea Async s-a încheiat.")
-
-def start_async_loop(session_id, groups, messages, bot_name):
-    asyncio.run(run_async_bot(session_id, groups, messages, bot_name))
+    log_message(f"[{bot_name}] 🏁 Sesiunea Blind Fire s-a oprit.")
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -122,12 +115,11 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"⚡ ATENȚIE: S-a pornit Motorul Asyncio (Viteză Cuantică)!")
+                log_message(f"⚡ ⚠️ S-a pornit MODUL MITRALIERĂ (BLIND FIRE) ⚠️")
                 
                 for idx, session in enumerate(sessions, start=1):
-                    bot_name = f"AsyncAgent #{idx}"
-                    # Pornim bucla async într-un thread dedicat pentru a nu bloca Flask
-                    t = threading.Thread(target=start_async_loop, args=(session, groups, messages, bot_name))
+                    bot_name = f"Mitraliera #{idx}"
+                    t = threading.Thread(target=run_blind_bot, args=(session, groups, messages, bot_name))
                     t.daemon = True
                     t.start()
                     
@@ -142,20 +134,20 @@ HTML_TEMPLATE = """
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
-    <title>Instagram Asyncio Bot</title>
+    <title>Instagram Blind Fire Bot</title>
     <style>
-        body { background: #080314; color: #a855f7; font-family: monospace; padding: 20px; }
-        .container { max-width: 800px; margin: auto; background: #130722; padding: 20px; border-radius: 8px; border: 1px solid #3b0764; box-shadow: 0 0 30px rgba(168,85,247,0.3); }
-        textarea { width: 100%; background: #03000a; color: #c084fc; border: 1px solid #581c87; padding: 10px; margin-top: 5px; margin-bottom: 15px; border-radius: 4px; box-sizing: border-box; }
+        body { background: #1a0000; color: #ff3333; font-family: monospace; padding: 20px; }
+        .container { max-width: 800px; margin: auto; background: #2a0000; padding: 20px; border-radius: 8px; border: 1px solid #ff0000; box-shadow: 0 0 35px rgba(255,0,0,0.4); }
+        textarea { width: 100%; background: #0a0000; color: #ff6666; border: 1px solid #990000; padding: 10px; margin-top: 5px; margin-bottom: 15px; border-radius: 4px; box-sizing: border-box; }
         button { padding: 12px 20px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; text-transform: uppercase; }
-        .btn-start { background: #9333ea; color: white; width: 100%; font-size: 16px; }
-        .btn-stop { background: #4c1d95; color: white; width: 100%; font-size: 16px; }
-        .logs { background: #03000a; padding: 15px; height: 350px; overflow-y: scroll; border: 1px solid #2e1065; font-size: 11px; border-radius: 4px; white-space: pre-wrap; color: #e879f9; }
+        .btn-start { background: #ff0000; color: white; width: 100%; font-size: 16px; }
+        .btn-stop { background: #440000; color: white; width: 100%; font-size: 16px; }
+        .logs { background: #0a0000; padding: 15px; height: 350px; overflow-y: scroll; border: 1px solid #660000; font-size: 11px; border-radius: 4px; white-space: pre-wrap; color: #ff9999; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>🔮 Instagram Asyncio Bot (High-Concurrency Engine)</h2>
+        <h2>🔥 Instagram Blind Fire Bot (Modul Mitralieră / Fără Așteptare)</h2>
         <form method="POST">
             <label><b>Session ID-uri:</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie..."></textarea>
@@ -167,13 +159,13 @@ HTML_TEMPLATE = """
             <textarea name="messages" rows="4" placeholder="Mesaj..."></textarea>
 
             {% if running %}
-                <button type="submit" name="action" value="stop" class="btn-stop">Oprește Motorul Async</button>
+                <button type="submit" name="action" value="stop" class="btn-stop">Oprește Mitraliera</button>
             {% else %}
-                <button type="submit" name="action" value="start" class="btn-start">LANSEAZĂ ASYNCIO 🔮</button>
+                <button type="submit" name="action" value="start" class="btn-start">PORNEȘTE MITRALIERA 💥</button>
             {% endif %}
         </form>
 
-        <h3 style="margin-top: 25px; color: #e9d5ff;">Jurnal Async Engine:</h3>
+        <h3 style="margin-top: 25px; color: #ffcccc;">Jurnal Blind Fire:</h3>
         <div class="logs">{% for log in logs %}{{ log }}&#10;{% endfor %}</div>
     </div>
 </body>
