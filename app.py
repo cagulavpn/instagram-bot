@@ -21,27 +21,24 @@ def log_message(message):
     print(entry)
 
 def fire_and_forget(client, thread_id, message_text, bot_name):
-    # BLIND FIRE: Trimitem cererea pur și simplu, fără să ne pese de răspuns sau eroare
     try:
         client.direct_send(message_text, thread_ids=[thread_id])
-        log_message(f"[{bot_name}] 🎯 [BLIND HIT] Mesaj expediat în flux!")
+        log_message(f"[{bot_name}] 🎯 [BLIND HIT] Mesaj trimis!")
     except Exception as e:
-        # Prindem orice eroare de la Instagram (inclusiv rate limit / block) dar mergem înainte
-        log_message(f"[{bot_name}] ⚡ [FIRE] Pachet trimis (Server Meta a răspuns: {str(e)[:30]}...)")
+        log_message(f"[{bot_name}] ⚡ [FIRE] Pachet livrat (Răspuns server: {str(e)[:25]}...)")
 
 def run_blind_bot(session_id, group_targets, messages_list, bot_name):
     client = Client()
     client.delay_range = [0, 0]
 
-    log_message(f"[{bot_name}] Autentificare pentru Modul Mitralieră...")
+    log_message(f"[{bot_name}] Conectare Mitralieră...")
     try:
         client.login_by_sessionid(session_id.strip())
-        log_message(f"[{bot_name}] Conexiune stabilită! Armare completă.")
+        log_message(f"[{bot_name}] Conexiune armată cu succes!")
     except Exception as e:
         log_message(f"[{bot_name}] ❌ Sesiune eșuată: {str(e)}")
         return
 
-    # Colectăm ID-urile grupurilor instant
     active_threads = []
     for target_group in group_targets:
         target_group = target_group.strip()
@@ -72,14 +69,14 @@ def run_blind_bot(session_id, group_targets, messages_list, bot_name):
             log_message(f"[{bot_name}] 🎯 Țintă fixată: {target_group}")
 
     if not active_threads:
-        log_message(f"[{bot_name}] ❌ Nicio țintă validă.")
+        log_message(f"[{bot_name}] ❌ Nicio țintă validă găsită.")
         return
 
-    log_message(f"[{bot_name}] 🔥 ATAC BLIND FIRE DECLANȘAT (Fără rețineri)!")
+    log_message(f"[{bot_name}] 🔥 FOC CONTINUU DECLANȘAT!")
     
     msg_index = 0
-    # Deschidem un pool uriaș de 50 de fire paralele pentru viteză brută
-    with ThreadPoolExecutor(max_workers=50) as executor:
+    # Folosim 15 fire optimizate ca să nu blocăm serverul de pe Render
+    with ThreadPoolExecutor(max_workers=15) as executor:
         while bot_status["running"]:
             for thread_id in active_threads:
                 if not bot_status["running"]:
@@ -88,12 +85,12 @@ def run_blind_bot(session_id, group_targets, messages_list, bot_name):
                 message_text = messages_list[msg_index % len(messages_list)]
                 msg_index += 1
                 
-                # ARUNCĂM CEREREA ÎN REȚEA FĂRĂ SĂ AȘTEPTĂM NIMIC (Non-blocking submit)
                 executor.submit(fire_and_forget, client, thread_id, message_text, bot_name)
             
-            # Fără nicio pauză (0 secunde). Lăsăm procesorul și rețeaua să zboare la maximum.
+            # Micro-pauză de siguranță pentru a ține serverul în viață (fără erori 500)
+            time.sleep(0.05)
 
-    log_message(f"[{bot_name}] 🏁 Sesiunea Blind Fire s-a oprit.")
+    log_message(f"[{bot_name}] 🏁 Sesiunea s-a oprit.")
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -115,7 +112,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"⚡ ⚠️ S-a pornit MODUL MITRALIERĂ (BLIND FIRE) ⚠️")
+                log_message(f"⚡ ⚠️ S-a pornit MODUL MITRALIERĂ STABIL ⚠️")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Mitraliera #{idx}"
@@ -147,7 +144,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h2>🔥 Instagram Blind Fire Bot (Modul Mitralieră / Fără Așteptare)</h2>
+        <h2>🔥 Instagram Blind Fire Bot (Modul Mitralieră)</h2>
         <form method="POST">
             <label><b>Session ID-uri:</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie..."></textarea>
