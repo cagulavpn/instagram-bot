@@ -10,6 +10,9 @@ app = Flask(__name__)
 logs = []
 bot_status = {"running": False}
 
+# Dicționar global pentru a memora ID-urile grupurilor pe baza numelui introdus
+group_id_cache = {}
+
 def log_message(message):
     global logs
     timestamp = time.strftime("[%H:%M:%S]")
@@ -21,7 +24,6 @@ def log_message(message):
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
     client = Client()
-    # Setează un delay de bază mai mare pentru a mima un utilizator lent
     client.delay_range = [5, 10]
 
     log_message(f"[{bot_name}] Conectare securizată în curs...")
@@ -36,7 +38,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
     messages_sent_in_session = 0
 
     while bot_status["running"]:
-        # Amestecăm grupurile aleatoriu la fiecare ciclu să nu pară un șablon fix
         shuffled_groups = list(group_targets)
         random.shuffle(shuffled_groups)
 
@@ -48,35 +49,55 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
             if not target_group:
                 continue
 
-            log_message(f"[{bot_name}] Caut ținta: '{target_group}'...")
             chat_thread = None
             
-            try:
-                threads = client.direct_threads(amount=25)
-                for thread in threads:
-                    thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
-                    if target_group.lower() in thread_name.lower() or target_group == str(thread.id):
-                        chat_thread = thread
-                        break
-                
-                if chat_thread:
+            # Verificăm dacă avem deja ID-ul salvat în memorie pentru acest grup
+            if target_group in group_id_cache:
+                saved_thread_id = group_id_cache[target_group]
+                log_message(f"[{bot_name}] Folosesc ID-ul memorat pentru '{target_group}' (rezistent la schimbarea numelui)...")
+                try:
+                    # Încercăm direct să trimitem sau să validăm thread-ul prin ID-ul salvat
+                    chat_thread = client.direct_thread(saved_thread_id)
+                except Exception:
+                    # Dacă ID-ul a devenit invalid din orice motiv, resetăm cache-ul și căutăm din nou
+                    chat_thread = None
+
+            # Dacă nu avem ID-ul salvat sau a eșuat, căutăm grupul prin inbox după nume
+            if not chat_thread:
+                log_message(f"[{bot_name}] Caut ținta în inbox: '{target_group}'...")
+                try:
+                    threads = client.direct_threads(amount=25)
+                    for thread in threads:
+                        thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
+                        
+                        # Dacă numele se potrivește SAU textul introdus este chiar ID-ul numeric al grupului
+                        if target_group.lower() in thread_name.lower() or target_group == str(thread.id):
+                            chat_thread = thread
+                            # SALVĂM ID-ul AUTOMAT! Chiar dacă schimbi numele de acum înainte, tot aici va trimite
+                            group_id_cache[target_group] = thread.id
+                            log_message(f"[{bot_name}] 📌 ID salvat automat pentru '{target_group}' (ID: {thread.id})")
+                            break
+                except Exception as e:
+                    log_message(f"[{bot_name}] ⚠️ Eroare la căutarea grupului: {str(e)}")
+            
+            # Trimiterea efectivă a mesajului dacă am găsit grupul
+            if chat_thread:
+                try:
                     message_text = messages_list[msg_index % len(messages_list)]
                     msg_index += 1
                     
                     client.direct_send(message_text, thread_ids=[chat_thread.id])
                     messages_sent_in_session += 1
                     log_message(f"[{bot_name}] 🎯 Lovitură reușită pe '{target_group}' (Total cont: {messages_sent_in_session})")
-                else:
-                    log_message(f"[{bot_name}] ⚠️ Ținta '{target_group}' negăsită în flux.")
-            
-            except Exception as e:
-                log_message(f"[{bot_name}] ⚠️ Alertele sistemului: {str(e)}")
+                except Exception as e:
+                    log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
+            else:
+                log_message(f"[{bot_name}] ⚠️ Ținta '{target_group}' nu a fost găsită în flux.")
 
-            # CAMUFLAJ NIVEL 1: Pauză aleatorie mare (între 15 și 35 de secunde - ritm de om relaxat)
+            # Pauze stealth și de oboseală la 30 de mesaje
             stealth_sleep = random.uniform(15.0, 35.0)
             
-            # CAMUFLAJ NIVEL 2: Pauză de oboseală la fiecare 30 de mesaje trimise
-            if messages_sent_in_session % 30 == 0:
+            if messages_sent_in_session > 0 and messages_sent_in_session % 30 == 0:
                 fatigue_pause = random.uniform(60.0, 120.0)
                 log_message(f"[{bot_name}] 🛡️ Prag de 30 de mesaje atins! Contul ia o pauză de respirație de {int(fatigue_pause)} secunde...")
                 time.sleep(fatigue_pause)
@@ -87,7 +108,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name):
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global logs, bot_status
+    global logs, bot_status, group_id_cache
     if request.method == "POST":
         action = request.form.get("action")
         
@@ -109,6 +130,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
+                # Curățăm cache-ul vechi la o nouă pornire completă dacă e nevoie, sau îl lăsăm
                 log_message(f"🕶️ Sistemul Stealth a pornit cu {len(sessions)} conturi în paralel pe {len(groups)} grupuri.")
                 
                 for idx, session in enumerate(sessions, start=1):
