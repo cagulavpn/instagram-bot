@@ -101,7 +101,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
                     messages_sent_in_session += 1
                     log_message(f"[{bot_name}] 🎯 Trimis pe '{target_group}' (Total: {messages_sent_in_session})")
                     
-                    # Autoreact robust prin API-ul intern instagrapi / private request
                     if emoji_choice:
                         try:
                             msg_id = None
@@ -119,11 +118,9 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
                                     msg_id = messages_in_chat[0].id
 
                             if msg_id:
-                                # Apel direct prin client.private_request pentru a adăuga reacția
                                 client.private_request(
                                     f"direct_v2/threads/{chat_thread.id}/reactions/item/{msg_id}/",
-                                    data={"reaction_type": "emoji", "reaction_value": emoji_choice, "node_type": "item"},
-                                    method="POST"
+                                    data={"reaction_type": "emoji", "reaction_value": emoji_choice, "node_type": "item"}
                                 )
                                 log_message(f"[{bot_name}] ⭐ Autoreact aplicat cu succes: {emoji_choice}")
                             else:
@@ -173,7 +170,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Test pornit cu Autoreact fixat (3-5s) cu {len(sessions)} conturi.")
+                log_message(f"🚀 Test pornit cu Autoreact complet funcțional (3-5s) cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
@@ -205,7 +202,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h2>⚡ Instagram Test Bot (Autoreact Fix)</h2>
+        <h2>⚡ Instagram Test Bot (Autoreact Fix 2)</h2>
         <form method="POST">
             <label><b>Session ID-uri:</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie1, cookie2..."></textarea>
@@ -226,7 +223,7 @@ HTML_TEMPLATE = """
                 <button type="submit" name="action" value="stop" class="btn-stop">Oprește Toți Agenții</button>
             {% else %}
                 <button type="submit" name="action" value="start" class="btn-start">Pornește Testul</button>
-            {% endif %}
+            {%/if}
         </form>
 
         <h3 style="margin-top: 25px; color: #f3f4f6;">Jurnal:</h3>
