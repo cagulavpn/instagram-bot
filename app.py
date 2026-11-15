@@ -101,6 +101,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
                     messages_sent_in_session += 1
                     log_message(f"[{bot_name}] 🎯 Trimis pe '{target_group}' (Total: {messages_sent_in_session})")
                     
+                    # Autoreact robust prin API-ul intern instagrapi / private request
                     if emoji_choice:
                         try:
                             msg_id = None
@@ -112,14 +113,21 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
                             elif isinstance(sent_msg, dict):
                                 msg_id = sent_msg.get('id')
 
-                            if msg_id:
-                                client.direct_message_reaction(chat_thread.id, msg_id, reaction=emoji_choice)
-                                log_message(f"[{bot_name}] ⭐ Autoreact aplicat cu succes: {emoji_choice}")
-                            else:
+                            if not msg_id:
                                 messages_in_chat = client.direct_messages(chat_thread.id, amount=1)
                                 if messages_in_chat:
-                                    client.direct_message_reaction(chat_thread.id, messages_in_chat[0].id, reaction=emoji_choice)
-                                    log_message(f"[{bot_name}] ⭐ Autoreact aplicat pe ultimul mesaj: {emoji_choice}")
+                                    msg_id = messages_in_chat[0].id
+
+                            if msg_id:
+                                # Apel direct prin client.private_request pentru a adăuga reacția
+                                client.private_request(
+                                    f"direct_v2/threads/{chat_thread.id}/reactions/item/{msg_id}/",
+                                    data={"reaction_type": "emoji", "reaction_value": emoji_choice, "node_type": "item"},
+                                    method="POST"
+                                )
+                                log_message(f"[{bot_name}] ⭐ Autoreact aplicat cu succes: {emoji_choice}")
+                            else:
+                                log_message(f"[{bot_name}] ⚠️ Nu s-a putut identifica ID-ul mesajului pentru react.")
                         except Exception as react_err:
                             log_message(f"[{bot_name}] ⚠️ Eroare detaliată autoreact: {str(react_err)}")
 
@@ -165,7 +173,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Test pornit cu Proxy HTTP (3-5s) cu {len(sessions)} conturi.")
+                log_message(f"🚀 Test pornit cu Autoreact fixat (3-5s) cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
@@ -184,7 +192,7 @@ HTML_TEMPLATE = """
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
-    <title>Instagram Fast Test Bot (HTTP)</title>
+    <title>Instagram Fast Test Bot</title>
     <style>
         body { background: #090d16; color: #38bdf8; font-family: monospace; padding: 20px; }
         .container { max-width: 800px; margin: auto; background: #111827; padding: 20px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
@@ -197,7 +205,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h2>⚡ Instagram Test Bot (HTTP Proxy + 3-5s)</h2>
+        <h2>⚡ Instagram Test Bot (Autoreact Fix)</h2>
         <form method="POST">
             <label><b>Session ID-uri:</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie1, cookie2..."></textarea>
@@ -217,7 +225,7 @@ HTML_TEMPLATE = """
             {% if running %}
                 <button type="submit" name="action" value="stop" class="btn-stop">Oprește Toți Agenții</button>
             {% else %}
-                <button type="submit" name="action" value="start" class="btn-start">Pornește Testul Rapid</button>
+                <button type="submit" name="action" value="start" class="btn-start">Pornește Testul</button>
             {% endif %}
         </form>
 
