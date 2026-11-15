@@ -223,7 +223,7 @@ HTML_TEMPLATE = """
                 <button type="submit" name="action" value="stop" class="btn-stop">Oprește Toți Agenții</button>
             {% else %}
                 <button type="submit" name="action" value="start" class="btn-start">Pornește Testul</button>
-            {%/if}
+            {% endif %}
         </form>
 
         <h3 style="margin-top: 25px; color: #f3f4f6;">Jurnal:</h3>
