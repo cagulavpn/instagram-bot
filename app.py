@@ -33,7 +33,7 @@ def parse_proxy(proxy_raw):
         return f"http://{parts[0]}:{parts[1]}"
     return proxy_raw
 
-def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_choice, proxy_raw):
+def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
     
     proxy_url = parse_proxy(proxy_raw)
@@ -97,37 +97,9 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
                     message_text = messages_list[msg_index % len(messages_list)]
                     msg_index += 1
                     
-                    sent_msg = client.direct_send(message_text, thread_ids=[chat_thread.id])
+                    client.direct_send(message_text, thread_ids=[chat_thread.id])
                     messages_sent_in_session += 1
                     log_message(f"[{bot_name}] 🎯 Trimis pe '{target_group}' (Total: {messages_sent_in_session})")
-                    
-                    if emoji_choice:
-                        try:
-                            msg_id = None
-                            if isinstance(sent_msg, list) and len(sent_msg) > 0:
-                                first_item = sent_msg[0]
-                                msg_id = getattr(first_item, 'id', None) or (first_item.get('id') if isinstance(first_item, dict) else None)
-                            elif hasattr(sent_msg, 'id'):
-                                msg_id = sent_msg.id
-                            elif isinstance(sent_msg, dict):
-                                msg_id = sent_msg.get('id')
-
-                            if not msg_id:
-                                messages_in_chat = client.direct_messages(chat_thread.id, amount=1)
-                                if messages_in_chat:
-                                    msg_id = messages_in_chat[0].id
-
-                            if msg_id:
-                                # Endpoint corectat pentru reacții
-                                client.private_request(
-                                    f"direct_v2/threads/{chat_thread.id}/items/{msg_id}/reaction/",
-                                    data={"reaction_type": "emoji", "reaction_value": emoji_choice, "node_type": "item"}
-                                )
-                                log_message(f"[{bot_name}] ⭐ Autoreact aplicat cu succes: {emoji_choice}")
-                            else:
-                                log_message(f"[{bot_name}] ⚠️ Nu s-a putut identifica ID-ul mesajului pentru react.")
-                        except Exception as react_err:
-                            log_message(f"[{bot_name}] ⚠️ Eroare detaliată autoreact: {str(react_err)}")
 
                 except Exception as e:
                     log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
@@ -155,7 +127,6 @@ def index():
             sessions_raw = request.form.get("sessions", "")
             groups_raw = request.form.get("groups", "")
             messages_raw = request.form.get("messages", "")
-            emoji_choice = request.form.get("emoji", "").strip()
             proxy_raw = request.form.get("proxy", "").strip()
             
             sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
@@ -171,11 +142,11 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Test pornit cu Autoreact actualizat (3-5s) cu {len(sessions)} conturi.")
+                log_message(f"🚀 Bot pornit la viteză rapidă (3-5s) cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
-                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name, emoji_choice, proxy_raw))
+                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name, proxy_raw))
                     t.daemon = True
                     t.start()
                     
@@ -187,49 +158,125 @@ def index():
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="ro">
+<html lang="ro" class="dark">
 <head>
     <meta charset="UTF-8">
-    <title>Instagram Fast Test Bot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Multi-Bot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darker: '#030712',
+                        card: '#0b0f19',
+                        bordercolor: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        body { background: #090d16; color: #38bdf8; font-family: monospace; padding: 20px; }
-        .container { max-width: 800px; margin: auto; background: #111827; padding: 20px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
-        textarea, input { width: 100%; background: #030712; color: #e2e8f0; border: 1px solid #374151; padding: 10px; margin-top: 5px; margin-bottom: 15px; border-radius: 4px; box-sizing: border-box; }
-        button { padding: 12px 20px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; text-transform: uppercase; }
-        .btn-start { background: #10b981; color: white; width: 100%; }
-        .btn-stop { background: #ef4444; color: white; width: 100%; }
-        .logs { background: #020617; padding: 15px; height: 300px; overflow-y: scroll; border: 1px solid #1f2937; font-size: 12px; border-radius: 4px; white-space: pre-wrap; color: #34d399; }
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #030712; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h2>⚡ Instagram Test Bot (Autoreact Fix Final)</h2>
-        <form method="POST">
-            <label><b>Session ID-uri:</b></label>
-            <textarea name="sessions" rows="2" placeholder="cookie1, cookie2..."></textarea>
-            
-            <label><b>Grupuri:</b></label>
-            <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2"></textarea>
+<body class="bg-darker text-slate-100 min-h-screen py-8 px-4 sm:px-6 lg:px-8 flex flex-col justify-between">
 
-            <label><b>Mesaje:</b></label>
-            <textarea name="messages" rows="4" placeholder="Mesaj 1&#10;Mesaj 2"></textarea>
+    <div class="max-w-4xl mx-auto w-full">
+        <!-- Header -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-card border border-bordercolor p-6 rounded-2xl shadow-2xl mb-6 backdrop-blur-xl">
+            <div>
+                <div class="flex items-center gap-3">
+                    <span class="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20 text-xl">⚡</span>
+                    <h1 class="text-xl font-bold tracking-tight text-white">Instagram Control Center</h1>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">Sistem ultra-rapid de trimitere directă (3-5s) prin Proxy HTTP</p>
+            </div>
+            <div class="mt-4 sm:mt-0 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full border {% if running %}bg-emerald-500/10 border-emerald-500/30 text-emerald-400{% else %}bg-slate-800/50 border-slate-700 text-slate-400{% endif %} text-xs font-medium">
+                <span class="w-2 h-2 rounded-full {% if running %}bg-emerald-400 animate-pulse{% else %}bg-slate-500{% endif %}"></span>
+                <span>{% if running %}Sistem Activ (Rulează){% else %}Sistem Oprit{% endif %}</span>
+            </div>
+        </div>
 
-            <label><b>Proxy:</b></label>
-            <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909">
+        <!-- Main Card -->
+        <div class="bg-card border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-6">
+            <form method="POST" class="space-y-5">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Session ID-uri (separate prin virgulă)</label>
+                    <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"></textarea>
+                </div>
 
-            <label><b>Emoji pentru Autoreact:</b></label>
-            <input type="text" name="emoji" placeholder="Ex: 🔥">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Grupuri Țintă (câte un grup pe rând)</label>
+                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Mesaje de Trimis (câte un mesaj pe rând)</label>
+                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"></textarea>
+                    </div>
+                </div>
 
-            {% if running %}
-                <button type="submit" name="action" value="stop" class="btn-stop">Oprește Toți Agenții</button>
-            {% else %}
-                <button type="submit" name="action" value="start" class="btn-start">Pornește Testul</button>
-            {% endif %}
-        </form>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Proxy HTTP (IP:Port:User:Pass)</label>
+                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
+                </div>
 
-        <h3 style="margin-top: 25px; color: #f3f4f6;">Jurnal:</h3>
-        <div class="logs">{% for log in logs %}{{ log }}&#10;{% endfor %}</div>
+                <div class="pt-2">
+                    {% if running %}
+                        <button type="submit" name="action" value="stop" class="w-full py-3.5 px-4 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl shadow-lg shadow-rose-500/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer">
+                            <span>⏹ Oprește Toți Agenții</span>
+                        </button>
+                    {% else %}
+                        <button type="submit" name="action" value="start" class="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer">
+                            <span>🚀 Pornește Botul la Viteză Maximă</span>
+                        </button>
+                    {% endif %}
+                </div>
+            </form>
+
+            <!-- Logs Section -->
+            <div class="space-y-3 pt-4 border-t border-bordercolor">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Jurnal Activ (Live Console)</h3>
+                    <span class="text-xs text-slate-500 font-mono">Auto-scroll activ</span>
+                </div>
+                <div id="logBox" class="bg-darker border border-bordercolor rounded-xl p-4 h-64 overflow-y-auto font-mono text-xs text-emerald-400 leading-relaxed shadow-inner space-y-1">
+                    {% for log in logs %}
+                        <div>{{ log }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Footer -->
+    <footer class="text-center text-xs text-slate-600 mt-8">
+        Instagram Multi-Bot Engine &bull; Secure Proxy Protocol
+    </footer>
+
+    <script>
+        // Auto-scroll la ultimul log în timp real
+        const logBox = document.getElementById('logBox');
+        if (logBox) {
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        // Auto-refresh la pagină la fiecare 3 secunde dacă botul rulează pentru a vedea jurnalele live
+        {% if running %}
+        setTimeout(() => {
+            location.reload();
+        }, 3000);
+        {% endif %}
+    </script>
 </body>
 </html>
 """
