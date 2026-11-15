@@ -118,8 +118,9 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
                                     msg_id = messages_in_chat[0].id
 
                             if msg_id:
+                                # Endpoint corectat pentru reacții
                                 client.private_request(
-                                    f"direct_v2/threads/{chat_thread.id}/reactions/item/{msg_id}/",
+                                    f"direct_v2/threads/{chat_thread.id}/items/{msg_id}/reaction/",
                                     data={"reaction_type": "emoji", "reaction_value": emoji_choice, "node_type": "item"}
                                 )
                                 log_message(f"[{bot_name}] ⭐ Autoreact aplicat cu succes: {emoji_choice}")
@@ -170,7 +171,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Test pornit cu Autoreact complet funcțional (3-5s) cu {len(sessions)} conturi.")
+                log_message(f"🚀 Test pornit cu Autoreact actualizat (3-5s) cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
@@ -202,7 +203,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h2>⚡ Instagram Test Bot (Autoreact Fix 2)</h2>
+        <h2>⚡ Instagram Test Bot (Autoreact Fix Final)</h2>
         <form method="POST">
             <label><b>Session ID-uri:</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie1, cookie2..."></textarea>
