@@ -22,15 +22,16 @@ def log_message(message):
     print(entry)
 
 def parse_proxy(proxy_raw):
+    """Convertește IP:Port:User:Pass în URL SOCKS5 pentru instagrapi"""
     if not proxy_raw:
         return None
     proxy_raw = proxy_raw.strip()
     parts = proxy_raw.split(":")
     if len(parts) == 4:
         ip, port, user, pwd = parts
-        return f"http://{user}:{pwd}@{ip}:{port}"
+        return f"socks5://{user}:{pwd}@{ip}:{port}"
     elif len(parts) == 2:
-        return f"http://{parts[0]}:{parts[1]}"
+        return f"socks5://{parts[0]}:{parts[1]}"
     return proxy_raw
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_choice, proxy_raw):
@@ -40,7 +41,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
     if proxy_url:
         try:
             client.set_proxy(proxy_url)
-            log_message(f"[{bot_name}] 🌐 Proxy configurat cu succes!")
+            log_message(f"[{bot_name}] 🌐 Proxy SOCKS5 configurat cu succes!")
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare setare proxy: {str(e)}")
 
@@ -49,7 +50,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
     log_message(f"[{bot_name}] Conectare securizată în curs...")
     try:
         client.login_by_sessionid(session_id.strip())
-        log_message(f"[{bot_name}] Conexiune stabilită cu succes!")
+        log_message(f"[{bot_name}] Conexiune stabilită cu succes sub radar!")
     except Exception as e:
         log_message(f"[{bot_name}] ❌ Sesiune eșuată: {str(e)}")
         return
@@ -196,7 +197,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h2>⚡ Instagram Test Bot (Ritm Rapid 3-5s)</h2>
+        <h2>⚡ Instagram Test Bot (SOCKS5 Proxy + 3-5s)</h2>
         <form method="POST">
             <label><b>Session ID-uri:</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie1, cookie2..."></textarea>
