@@ -10,8 +10,6 @@ app = Flask(__name__)
 logs = []
 bot_status = {"running": False}
 
-group_id_cache = {}
-
 def log_message(message):
     global logs
     timestamp = time.strftime("[%H:%M:%S]")
@@ -44,7 +42,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare setare proxy: {str(e)}")
 
-    client.delay_range = [0.2, 0.5]
+    client.delay_range = [0.1, 0.3]
 
     log_message(f"[{bot_name}] Conectare securizată în curs...")
     try:
@@ -54,73 +52,76 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         log_message(f"[{bot_name}] ❌ Sesiune eșuată: {str(e)}")
         return
 
+    # --- PRE-CACHING INTELIGENT LA PORNIRE (Elimină lag-ul) ---
+    resolved_threads = {}
+    log_message(f"[{bot_name}] 🔍 Caut și memorez ID-urile grupurilor țintă...")
+    try:
+        threads = client.direct_threads(amount=30)
+        for target in group_targets:
+            target_clean = target.strip()
+            if not target_clean:
+                continue
+            found = False
+            for thread in threads:
+                thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
+                if target_clean.lower() in thread_name.lower() or target_clean == str(thread.id):
+                    resolved_threads[target_clean] = thread.id
+                    log_message(f"[{bot_name}] 📌 Memorat: '{target_clean}' -> ID {thread.id}")
+                    found = True
+                    break
+            if not found:
+                log_message(f"[{bot_name}] ⚠️ Nu s-a găsit în inbox: '{target_clean}'")
+    except Exception as e:
+        log_message(f"[{bot_name}] ⚠️ Eroare la cache-ul grupurilor: {str(e)}")
+
+    valid_targets = list(resolved_threads.keys())
+    if not valid_targets:
+        log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
+        return
+
     msg_index = 0
     messages_sent_in_session = 0
 
+    log_message(f"[{bot_name}] 🚀 Încep bombardamentul instant pe {len(valid_targets)} grupuri!")
+
     while bot_status["running"]:
-        shuffled_groups = list(group_targets)
+        shuffled_groups = list(valid_targets)
         random.shuffle(shuffled_groups)
 
         for target_group in shuffled_groups:
             if not bot_status["running"]:
                 break
             
-            target_group = target_group.strip()
-            if not target_group:
+            thread_id = resolved_threads.get(target_group)
+            if not thread_id:
                 continue
 
-            chat_thread = None
-            
-            if target_group in group_id_cache:
-                saved_thread_id = group_id_cache[target_group]
-                try:
-                    chat_thread = client.direct_thread(saved_thread_id)
-                except Exception:
-                    chat_thread = None
+            try:
+                message_text = messages_list[msg_index % len(messages_list)]
+                msg_index += 1
+                
+                # Trimitere instant direct prin ID-ul memorat
+                client.direct_send(message_text, thread_ids=[thread_id])
+                messages_sent_in_session += 1
+                log_message(f"[{bot_name}] 🎯 Trimis pe '{target_group}' (Total: {messages_sent_in_session})")
 
-            if not chat_thread:
-                log_message(f"[{bot_name}] Caut ținta în inbox: '{target_group}'...")
-                try:
-                    threads = client.direct_threads(amount=25)
-                    for thread in threads:
-                        thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
-                        if target_group.lower() in thread_name.lower() or target_group == str(thread.id):
-                            chat_thread = thread
-                            group_id_cache[target_group] = thread.id
-                            log_message(f"[{bot_name}] 📌 ID salvat automat pentru '{target_group}' (ID: {thread.id})")
-                            break
-                except Exception as e:
-                    log_message(f"[{bot_name}] ⚠️ Eroare la căutarea grupului: {str(e)}")
-            
-            if chat_thread:
-                try:
-                    message_text = messages_list[msg_index % len(messages_list)]
-                    msg_index += 1
-                    
-                    client.direct_send(message_text, thread_ids=[chat_thread.id])
-                    messages_sent_in_session += 1
-                    log_message(f"[{bot_name}] 🎯 Trimis pe '{target_group}' (Total: {messages_sent_in_session})")
+            except Exception as e:
+                log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
 
-                except Exception as e:
-                    log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
-            else:
-                log_message(f"[{bot_name}] ⚠️ Ținta '{target_group}' nu a fost găsită.")
-
-            # Viteză extremă setată la 0.4 - 0.6 secunde (medie 0.5s)
-            stealth_sleep = random.uniform(0.4, 0.6)
+            # Pauză ultra-scurtă între mesaje (aproximativ 0.3 - 0.5 secunde)
+            time.sleep(random.uniform(0.3, 0.5))
             
-            if messages_sent_in_session > 0 and messages_sent_in_session % 20 == 0:
-                fatigue_pause = random.uniform(15.0, 30.0)
-                log_message(f"[{bot_name}] 🛡️ S-au trimis 20 de mesaje. Pauză scurtă de protecție de {int(fatigue_pause)} secunde...")
+            # Pauză de protecție la fiecare 30 de mesaje ca să eviți blocarea contului
+            if messages_sent_in_session > 0 and messages_sent_in_session % 30 == 0:
+                fatigue_pause = random.uniform(10.0, 20.0)
+                log_message(f"[{bot_name}] 🛡️ Pauză de protecție de {int(fatigue_pause)}s...")
                 time.sleep(fatigue_pause)
-            else:
-                time.sleep(stealth_sleep)
-            
-        time.sleep(1)
+
+        time.sleep(0.5)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global logs, bot_status, group_id_cache
+    global logs, bot_status
     if request.method == "POST":
         action = request.form.get("action")
         
@@ -143,7 +144,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Bot pornit la VITEZOOM EXTREM (0.5s) cu {len(sessions)} conturi.")
+                log_message(f"🚀 Pornire motor ultra-rapid cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
@@ -163,7 +164,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Multi-Bot Extreme Speed</title>
+    <title>Instagram Instant Speed Bot</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -186,7 +187,6 @@ HTML_TEMPLATE = """
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #030712; }
         ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #334155; }
     </style>
 </head>
 <body class="bg-darker text-slate-100 min-h-screen py-8 px-4 sm:px-6 lg:px-8 flex flex-col justify-between">
@@ -196,14 +196,14 @@ HTML_TEMPLATE = """
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-card border border-bordercolor p-6 rounded-2xl shadow-2xl mb-6 backdrop-blur-xl">
             <div>
                 <div class="flex items-center gap-3">
-                    <span class="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20 text-xl">🔥</span>
-                    <h1 class="text-xl font-bold tracking-tight text-white">Instagram Extreme Speed Bot</h1>
+                    <span class="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20 text-xl">⚡</span>
+                    <h1 class="text-xl font-bold tracking-tight text-white">Instagram Instant Speed Bot</h1>
                 </div>
-                <p class="text-xs text-slate-400 mt-1">Ritm ultra-rapid setat la ~0.5s per mesaj</p>
+                <p class="text-xs text-slate-400 mt-1">Trimitere instantă prin ID-uri pre-memorate</p>
             </div>
             <div class="mt-4 sm:mt-0 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full border {% if running %}bg-emerald-500/10 border-emerald-500/30 text-emerald-400{% else %}bg-slate-800/50 border-slate-700 text-slate-400{% endif %} text-xs font-medium">
                 <span class="w-2 h-2 rounded-full {% if running %}bg-emerald-400 animate-pulse{% else %}bg-slate-500{% endif %}"></span>
-                <span>{% if running %}Sistem Activ (Viteză 0.5s){% else %}Sistem Oprit{% endif %}</span>
+                <span>{% if running %}Sistem Activ (Viteză Instant){% else %}Sistem Oprit{% endif %}</span>
             </div>
         </div>
 
@@ -212,23 +212,23 @@ HTML_TEMPLATE = """
             <form method="POST" class="space-y-5">
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Session ID-uri (separate prin virgulă)</label>
-                    <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"></textarea>
+                    <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"></textarea>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Grupuri Țintă (câte un grup pe rând)</label>
-                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"></textarea>
+                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"></textarea>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Mesaje de Trimis (câte un mesaj pe rând)</label>
-                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"></textarea>
+                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"></textarea>
                     </div>
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Proxy HTTP (IP:Port:User:Pass)</label>
-                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-slate-200 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition">
+                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition">
                 </div>
 
                 <div class="pt-2">
@@ -237,8 +237,8 @@ HTML_TEMPLATE = """
                             <span>⏹ Oprește Toți Agenții</span>
                         </button>
                     {% else %}
-                        <button type="submit" name="action" value="start" class="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl shadow-lg shadow-rose-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer">
-                            <span>🔥 Pornește la 0.5s (Viteză Maximă)</span>
+                        <button type="submit" name="action" value="start" class="w-full py-3.5 px-4 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-xl shadow-lg shadow-amber-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer">
+                            <span>⚡ Pornește Botul la Viteză Instant</span>
                         </button>
                     {% endif %}
                 </div>
@@ -259,9 +259,8 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- Footer -->
     <footer class="text-center text-xs text-slate-600 mt-8">
-        Instagram Extreme Speed Bot &bull; 0.5s Interval Protocol
+        Instagram Instant Speed Bot &bull; Pre-cached Thread Engine
     </footer>
 
     <script>
@@ -273,7 +272,7 @@ HTML_TEMPLATE = """
         {% if running %}
         setTimeout(() => {
             location.reload();
-        }, 2000);
+        }, 1500);
         {% endif %}
     </script>
 </body>
