@@ -17,7 +17,7 @@ def log_message(message):
     timestamp = time.strftime("[%H:%M:%S]")
     entry = f"{timestamp} {message}"
     logs.append(entry)
-    if len(logs) > 100:
+    if len(logs) > 150:
         logs.pop(0)
     print(entry)
 
@@ -44,7 +44,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare setare proxy: {str(e)}")
 
-    client.delay_range = [2, 4]
+    client.delay_range = [0.2, 0.5]
 
     log_message(f"[{bot_name}] Conectare securizată în curs...")
     try:
@@ -106,16 +106,17 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
             else:
                 log_message(f"[{bot_name}] ⚠️ Ținta '{target_group}' nu a fost găsită.")
 
-            stealth_sleep = random.uniform(3.0, 5.0)
+            # Viteză extremă setată la 0.4 - 0.6 secunde (medie 0.5s)
+            stealth_sleep = random.uniform(0.4, 0.6)
             
-            if messages_sent_in_session > 0 and messages_sent_in_session % 30 == 0:
-                fatigue_pause = random.uniform(30.0, 60.0)
-                log_message(f"[{bot_name}] 🛡️ S-au trimis 30 de mesaje. Pauză scurtă de {int(fatigue_pause)} secunde...")
+            if messages_sent_in_session > 0 and messages_sent_in_session % 20 == 0:
+                fatigue_pause = random.uniform(15.0, 30.0)
+                log_message(f"[{bot_name}] 🛡️ S-au trimis 20 de mesaje. Pauză scurtă de protecție de {int(fatigue_pause)} secunde...")
                 time.sleep(fatigue_pause)
             else:
                 time.sleep(stealth_sleep)
             
-        time.sleep(5)
+        time.sleep(1)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -142,7 +143,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Bot pornit la viteză rapidă (3-5s) cu {len(sessions)} conturi.")
+                log_message(f"🚀 Bot pornit la VITEZOOM EXTREM (0.5s) cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
@@ -162,7 +163,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Multi-Bot Dashboard</title>
+    <title>Instagram Multi-Bot Extreme Speed</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -195,14 +196,14 @@ HTML_TEMPLATE = """
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-card border border-bordercolor p-6 rounded-2xl shadow-2xl mb-6 backdrop-blur-xl">
             <div>
                 <div class="flex items-center gap-3">
-                    <span class="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20 text-xl">⚡</span>
-                    <h1 class="text-xl font-bold tracking-tight text-white">Instagram Control Center</h1>
+                    <span class="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20 text-xl">🔥</span>
+                    <h1 class="text-xl font-bold tracking-tight text-white">Instagram Extreme Speed Bot</h1>
                 </div>
-                <p class="text-xs text-slate-400 mt-1">Sistem ultra-rapid de trimitere directă (3-5s) prin Proxy HTTP</p>
+                <p class="text-xs text-slate-400 mt-1">Ritm ultra-rapid setat la ~0.5s per mesaj</p>
             </div>
             <div class="mt-4 sm:mt-0 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full border {% if running %}bg-emerald-500/10 border-emerald-500/30 text-emerald-400{% else %}bg-slate-800/50 border-slate-700 text-slate-400{% endif %} text-xs font-medium">
                 <span class="w-2 h-2 rounded-full {% if running %}bg-emerald-400 animate-pulse{% else %}bg-slate-500{% endif %}"></span>
-                <span>{% if running %}Sistem Activ (Rulează){% else %}Sistem Oprit{% endif %}</span>
+                <span>{% if running %}Sistem Activ (Viteză 0.5s){% else %}Sistem Oprit{% endif %}</span>
             </div>
         </div>
 
@@ -211,23 +212,23 @@ HTML_TEMPLATE = """
             <form method="POST" class="space-y-5">
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Session ID-uri (separate prin virgulă)</label>
-                    <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"></textarea>
+                    <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"></textarea>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Grupuri Țintă (câte un grup pe rând)</label>
-                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"></textarea>
+                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"></textarea>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Mesaje de Trimis (câte un mesaj pe rând)</label>
-                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"></textarea>
+                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"></textarea>
                     </div>
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Proxy HTTP (IP:Port:User:Pass)</label>
-                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
+                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-slate-200 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition">
                 </div>
 
                 <div class="pt-2">
@@ -236,8 +237,8 @@ HTML_TEMPLATE = """
                             <span>⏹ Oprește Toți Agenții</span>
                         </button>
                     {% else %}
-                        <button type="submit" name="action" value="start" class="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer">
-                            <span>🚀 Pornește Botul la Viteză Maximă</span>
+                        <button type="submit" name="action" value="start" class="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl shadow-lg shadow-rose-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer">
+                            <span>🔥 Pornește la 0.5s (Viteză Maximă)</span>
                         </button>
                     {% endif %}
                 </div>
@@ -260,21 +261,19 @@ HTML_TEMPLATE = """
 
     <!-- Footer -->
     <footer class="text-center text-xs text-slate-600 mt-8">
-        Instagram Multi-Bot Engine &bull; Secure Proxy Protocol
+        Instagram Extreme Speed Bot &bull; 0.5s Interval Protocol
     </footer>
 
     <script>
-        // Auto-scroll la ultimul log în timp real
         const logBox = document.getElementById('logBox');
         if (logBox) {
             logBox.scrollTop = logBox.scrollHeight;
         }
 
-        // Auto-refresh la pagină la fiecare 3 secunde dacă botul rulează pentru a vedea jurnalele live
         {% if running %}
         setTimeout(() => {
             location.reload();
-        }, 3000);
+        }, 2000);
         {% endif %}
     </script>
 </body>
