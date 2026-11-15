@@ -22,7 +22,6 @@ def log_message(message):
     print(entry)
 
 def parse_proxy(proxy_raw):
-    """Convertește IP:Port:User:Pass în URL HTTP curat pentru instagrapi"""
     if not proxy_raw:
         return None
     proxy_raw = proxy_raw.strip()
@@ -115,12 +114,14 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
 
                             if msg_id:
                                 client.direct_message_reaction(chat_thread.id, msg_id, reaction=emoji_choice)
+                                log_message(f"[{bot_name}] ⭐ Autoreact aplicat cu succes: {emoji_choice}")
                             else:
                                 messages_in_chat = client.direct_messages(chat_thread.id, amount=1)
                                 if messages_in_chat:
                                     client.direct_message_reaction(chat_thread.id, messages_in_chat[0].id, reaction=emoji_choice)
+                                    log_message(f"[{bot_name}] ⭐ Autoreact aplicat pe ultimul mesaj: {emoji_choice}")
                         except Exception as react_err:
-                            pass
+                            log_message(f"[{bot_name}] ⚠️ Eroare detaliată autoreact: {str(react_err)}")
 
                 except Exception as e:
                     log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
