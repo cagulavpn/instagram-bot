@@ -22,16 +22,16 @@ def log_message(message):
     print(entry)
 
 def parse_proxy(proxy_raw):
-    """Convertește IP:Port:User:Pass în URL SOCKS5 pentru instagrapi"""
+    """Convertește IP:Port:User:Pass în URL HTTP curat pentru instagrapi"""
     if not proxy_raw:
         return None
     proxy_raw = proxy_raw.strip()
     parts = proxy_raw.split(":")
     if len(parts) == 4:
         ip, port, user, pwd = parts
-        return f"socks5://{user}:{pwd}@{ip}:{port}"
+        return f"http://{user}:{pwd}@{ip}:{port}"
     elif len(parts) == 2:
-        return f"socks5://{parts[0]}:{parts[1]}"
+        return f"http://{parts[0]}:{parts[1]}"
     return proxy_raw
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_choice, proxy_raw):
@@ -41,7 +41,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
     if proxy_url:
         try:
             client.set_proxy(proxy_url)
-            log_message(f"[{bot_name}] 🌐 Proxy SOCKS5 configurat cu succes!")
+            log_message(f"[{bot_name}] 🌐 Proxy HTTP configurat cu succes!")
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare setare proxy: {str(e)}")
 
@@ -50,7 +50,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
     log_message(f"[{bot_name}] Conectare securizată în curs...")
     try:
         client.login_by_sessionid(session_id.strip())
-        log_message(f"[{bot_name}] Conexiune stabilită cu succes sub radar!")
+        log_message(f"[{bot_name}] Conexiune stabilită cu succes!")
     except Exception as e:
         log_message(f"[{bot_name}] ❌ Sesiune eșuată: {str(e)}")
         return
@@ -127,7 +127,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, emoji_
             else:
                 log_message(f"[{bot_name}] ⚠️ Ținta '{target_group}' nu a fost găsită.")
 
-            # Ritm rapid de test: 3 - 5 secunde
             stealth_sleep = random.uniform(3.0, 5.0)
             
             if messages_sent_in_session > 0 and messages_sent_in_session % 30 == 0:
@@ -165,7 +164,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Test pornit la viteză rapidă (3-5s) cu {len(sessions)} conturi.")
+                log_message(f"🚀 Test pornit cu Proxy HTTP (3-5s) cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
@@ -184,7 +183,7 @@ HTML_TEMPLATE = """
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
-    <title>Instagram Fast Test Bot</title>
+    <title>Instagram Fast Test Bot (HTTP)</title>
     <style>
         body { background: #090d16; color: #38bdf8; font-family: monospace; padding: 20px; }
         .container { max-width: 800px; margin: auto; background: #111827; padding: 20px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
@@ -197,7 +196,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h2>⚡ Instagram Test Bot (SOCKS5 Proxy + 3-5s)</h2>
+        <h2>⚡ Instagram Test Bot (HTTP Proxy + 3-5s)</h2>
         <form method="POST">
             <label><b>Session ID-uri:</b></label>
             <textarea name="sessions" rows="2" placeholder="cookie1, cookie2..."></textarea>
