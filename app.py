@@ -31,7 +31,7 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker paralel dedicat pentru viteză maximă absolută fără limite"""
+    """Worker optimizat cu pauză mică de siguranță anti-eroare 1404006"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
@@ -40,10 +40,13 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             msg_idx += 1
             client.direct_send(msg, thread_ids=[thread_id])
             sent_count += 1
-            if sent_count % 10 == 0:  # Logăm la fiecare 10 mesaje ca să nu umplem consola instant
-                log_message(f"[{bot_name}] 🚀 Trimis pe '{target_name}' (Total: {sent_count})")
+            log_message(f"[{bot_name}] 🚀 Trimis pe '{target_name}' (Total: {sent_count})")
+            
+            # Pauză scurtă de 0.3s între mesaje pentru a preveni blocarea de la Instagram (error_code: 1404006)
+            time.sleep(0.3)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare pe '{target_name}': {str(e)}")
+            time.sleep(1.5)
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
@@ -56,8 +59,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare proxy: {str(e)}")
 
-    client.delay_range = [0, 0]
-
     log_message(f"[{bot_name}] 🔑 Conectare la cont...")
     try:
         client.login_by_sessionid(session_id.strip())
@@ -66,7 +67,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         log_message(f"[{bot_name}] ❌ Eroare sesiune/login: {str(e)}")
         return
 
-    # Pre-caching instantaneu pentru ID-urile grupurilor
     resolved_threads = {}
     try:
         log_message(f"[{bot_name}] 🔍 Caut grupurile țintă în inbox...")
@@ -92,7 +92,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
         return
 
-    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel pe grupurile memorate...")
+    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel optimizat...")
     worker_threads = []
     for target_name, thread_id in resolved_threads.items():
         t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list, bot_name))
@@ -280,7 +280,6 @@ HTML_TEMPLATE = """
         setTimeout(() => {
             location.reload();
         }, 2000);
-        // Reîmprospătează pagina la fiecare 2 secunde când e pornit ca să vezi mesajele noi în consolă
         {% endif %}
     </script>
 </body>
