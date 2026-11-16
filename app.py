@@ -49,6 +49,20 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
 
 def run_instagram_bot(username, password, verification_code, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
+    
+    # Amprentă Android modernă acceptată de Instagram
+    client.set_device({
+        "app_version": "310.0.0.35.119",
+        "android_version": 30,
+        "android_release": "11.0",
+        "dpi": "480dpi",
+        "resolution": "1080x2400",
+        "manufacturer": "OnePlus",
+        "device": "IN2023",
+        "model": "OnePlus8Pro",
+        "cpu": "qcom",
+        "version_code": "384561234"
+    })
 
     proxy_url = parse_proxy(proxy_raw)
     if proxy_url:
@@ -63,12 +77,11 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
     session_file = f"session_{username}.json"
     logged_in = False
 
-    # Încercăm să refolosim sesiunea salvată anterioar pentru a scăpa de cererile de cod
+    # Încercăm să refolosim sesiunea salvată anterioar
     if os.path.exists(session_file):
         try:
             log_message(f"[{bot_name}] 📂 Încerc să refolosesc sesiunea salvată...")
             client.load_settings(session_file)
-            client.override_app_version = True
             client.login(username, password)
             logged_in = True
             log_message(f"[{bot_name}] ✅ Sesiune încărcată și validată cu succes!")
@@ -79,7 +92,6 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
     if not logged_in:
         log_message(f"[{bot_name}] 🔑 Autentificare nouă pentru @{username}...")
         try:
-            client.override_app_version = True
             client.login(username, password)
             client.dump_settings(session_file)
             log_message(f"[{bot_name}] ✅ Conexiune stabilită și sesiune salvată cu succes!")
@@ -240,7 +252,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // CLEAN LOGIN</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // MODERN DEVICE</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -290,7 +302,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE FĂRĂ ERORI</span>
+                            <span>🔥 PORNEȘTE CU DISPOZITIV MODERN</span>
                         </button>
                     {% endif %}
                 </div>
