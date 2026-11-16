@@ -21,7 +21,6 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def account_worker(session_id, group_targets, messages_list, proxy_raw):
-    """Worker independent pentru fiecare cont în parte, rulat în paralel absolut"""
     client = Client()
     proxy_url = parse_proxy(proxy_raw)
     if proxy_url:
@@ -37,7 +36,6 @@ def account_worker(session_id, group_targets, messages_list, proxy_raw):
     except Exception:
         return
 
-    # Căutare rapidă a ID-urilor grupurilor la pornire
     resolved_threads = {}
     try:
         threads = client.direct_threads(amount=40)
@@ -56,7 +54,6 @@ def account_worker(session_id, group_targets, messages_list, proxy_raw):
     if not resolved_threads:
         return
 
-    # Sub-workeri paraleli pentru fiecare grup al acestui cont
     def group_spam_loop(thread_id):
         msg_idx = 0
         while bot_status["running"]:
@@ -98,7 +95,6 @@ def index():
                 bot_status["running"] = True
                 status_msg = f"Sistem pornit cu succes pe {len(sessions)} conturi în paralel!"
                 
-                # Porneste un fir separat pentru FIECARE cont în parte
                 for session in sessions:
                     t = threading.Thread(target=account_worker, args=(session, groups, messages, proxy_raw))
                     t.daemon = True
@@ -141,7 +137,6 @@ HTML_TEMPLATE = """
 <body class="bg-darker text-slate-100 min-h-screen py-12 px-4 sm:px-6 lg:px-8 flex flex-col justify-between">
 
     <div class="max-w-xl mx-auto w-full">
-        <!-- Header -->
         <div class="flex items-center justify-between bg-card border border-bordercolor p-6 rounded-2xl shadow-2xl mb-6">
             <div class="flex items-center gap-3">
                 <span class="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20 text-xl">⚡</span>
@@ -162,7 +157,6 @@ HTML_TEMPLATE = """
         </div>
         {% endif %}
 
-        <!-- Main Card -->
         <div class="bg-card border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
             <form method="POST" class="space-y-4">
                 <div>
@@ -205,3 +199,8 @@ HTML_TEMPLATE = """
     </footer>
 </body>
 </html>
+"""
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
