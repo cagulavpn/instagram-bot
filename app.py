@@ -6,7 +6,17 @@ from instagrapi import Client
 
 app = Flask(__name__)
 
+logs = []
 bot_status = {"running": False}
+
+def log_message(message):
+    global logs
+    timestamp = time.strftime("[%H:%M:%S]")
+    entry = f"{timestamp} {message}"
+    logs.append(entry)
+    if len(logs) > 150:
+        logs.pop(0)
+    print(entry)
 
 def parse_proxy(proxy_raw):
     if not proxy_raw:
@@ -20,67 +30,72 @@ def parse_proxy(proxy_raw):
         return f"http://{parts[0]}:{parts[1]}"
     return proxy_raw
 
-def spam_worker(client, thread_id, target_name, messages_list):
-    """Worker paralel dedicat pentru viteză maximă, cu afișare de erori în consolă"""
+def spam_worker(client, thread_id, target_name, messages_list, bot_name):
+    """Worker paralel dedicat pentru viteză maximă absolută fără limite"""
     msg_idx = 0
+    sent_count = 0
     while bot_status["running"]:
         try:
             msg = messages_list[msg_idx % len(messages_list)]
             msg_idx += 1
             client.direct_send(msg, thread_ids=[thread_id])
-            print(f"[SUCCESS] Trimis pe '{target_name}'")
+            sent_count += 1
+            if sent_count % 10 == 0:  # Logăm la fiecare 10 mesaje ca să nu umplem consola instant
+                log_message(f"[{bot_name}] 🚀 Trimis pe '{target_name}' (Total: {sent_count})")
         except Exception as e:
-            print(f"[ERROR LA TRIMITERE] Pe '{target_name}': {str(e)}")
-        # O micro-pauză de securitate de 0.05s ca să nu blocheze nucleul complet
-        time.sleep(0.05)
+            log_message(f"[{bot_name}] ⚠️ Eroare pe '{target_name}': {str(e)}")
 
-def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
+def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
     
     proxy_url = parse_proxy(proxy_raw)
     if proxy_url:
         try:
             client.set_proxy(proxy_url)
-            print(f"[PROXY] Setat cu succes pentru sesiune.")
+            log_message(f"[{bot_name}] 🌐 Proxy setat cu succes.")
         except Exception as e:
-            print(f"[PROXY ERROR] {str(e)}")
+            log_message(f"[{bot_name}] ⚠️ Eroare proxy: {str(e)}")
 
     client.delay_range = [0, 0]
 
-    print(f"[LOGIN] Încercare de autentificare cu sesiune...")
+    log_message(f"[{bot_name}] 🔑 Conectare la cont...")
     try:
         client.login_by_sessionid(session_id.strip())
-        print(f"[LOGIN] Autentificare reușită!")
+        log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes!")
     except Exception as e:
-        print(f"[LOGIN ERROR] Eroare sesiune: {str(e)}")
+        log_message(f"[{bot_name}] ❌ Eroare sesiune/login: {str(e)}")
         return
 
     # Pre-caching instantaneu pentru ID-urile grupurilor
     resolved_threads = {}
     try:
-        print(f"[CACHE] Caut grupurile țintă în inbox...")
+        log_message(f"[{bot_name}] 🔍 Caut grupurile țintă în inbox...")
         threads = client.direct_threads(amount=40)
         for target in group_targets:
             target_clean = target.strip()
             if not target_clean:
                 continue
+            found = False
             for thread in threads:
                 thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
                 if target_clean.lower() in thread_name.lower() or target_clean == str(thread.id):
                     resolved_threads[target_clean] = thread.id
-                    print(f"[FOUND] Grup găsit: '{target_clean}' -> ID: {thread.id}")
+                    log_message(f"[{bot_name}] 📌 Găsit: '{target_clean}' -> ID {thread.id}")
+                    found = True
                     break
+            if not found:
+                log_message(f"[{bot_name}] ⚠️ Negăsit în inbox: '{target_clean}'")
     except Exception as e:
-        print(f"[CACHE ERROR] {str(e)}")
+        log_message(f"[{bot_name}] ⚠️ Eroare la citirea inbox-ului: {str(e)}")
 
     if not resolved_threads:
-        print(f"[EROARE] Niciun grup țintă valid nu a fost găsit în inbox-ul acestui cont!")
+        log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
         return
 
-    # Lansare fire paralele instant pe fiecare grup
+    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel pe grupurile memorate...")
     worker_threads = []
     for target_name, thread_id in resolved_threads.items():
-        t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list))
+        t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list, bot_name))
         t.daemon = True
         t.start()
         worker_threads.append(t)
@@ -90,8 +105,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global bot_status
-    status_msg = ""
+    global logs, bot_status
     if request.method == "POST":
         action = request.form.get("action")
         
@@ -105,20 +119,28 @@ def index():
             groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
             messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
             
-            if sessions and groups and messages:
+            if not sessions:
+                log_message("❌ Eroare: Lipsesc Session ID-urile!")
+            elif not groups:
+                log_message("❌ Eroare: Nu ai setat nicio țintă!")
+            elif not messages:
+                log_message("❌ Eroare: Nu ai adăugat mesaje!")
+            else:
                 bot_status["running"] = True
-                status_msg = "⚡ KISE CAGULA CORE ACTIVAT: Fluxul a fost eliberat!"
+                logs.clear()
+                log_message(f"🚀 Sistem pornit cu {len(sessions)} conturi în paralel.")
                 
-                for session in sessions:
-                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, proxy_raw))
+                for idx, session in enumerate(sessions, start=1):
+                    bot_name = f"Agent #{idx}"
+                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name, proxy_raw))
                     t.daemon = True
                     t.start()
                     
         elif action == "stop":
             bot_status["running"] = False
-            status_msg = "🛑 S-a ordonat oprirea forțată a sistemului."
+            log_message("⏹️ S-a ordonat oprirea sistemului.")
 
-    return render_template_string(HTML_TEMPLATE, running=bot_status["running"], status_msg=status_msg)
+    return render_template_string(HTML_TEMPLATE, logs=logs, running=bot_status["running"])
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -163,23 +185,27 @@ HTML_TEMPLATE = """
         .font-title { font-family: 'Cinzel', serif; }
         
         .glass-smoke {
-            background: rgba(15, 7, 9, 0.78);
+            background: rgba(15, 7, 9, 0.82);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             box-shadow: 0 0 40px rgba(220, 38, 38, 0.25), inset 0 0 20px rgba(220, 38, 38, 0.08);
         }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #050203; }
+        ::-webkit-scrollbar-thumb { background: #3f111a; border-radius: 4px; }
     </style>
 </head>
 <body class="text-slate-100 min-h-screen py-10 px-4 sm:px-6 lg:px-8 flex flex-col justify-between selection:bg-blood selection:text-white">
 
-    <div class="max-w-xl mx-auto w-full">
+    <div class="max-w-2xl mx-auto w-full space-y-6">
         <!-- Header -->
-        <div class="flex items-center justify-between glass-smoke border border-bordercolor p-6 rounded-2xl shadow-2xl mb-6">
+        <div class="flex items-center justify-between glass-smoke border border-bordercolor p-6 rounded-2xl shadow-2xl">
             <div class="flex items-center gap-3.5">
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // TURBO</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // LIVE CONSOLE</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -187,12 +213,6 @@ HTML_TEMPLATE = """
                 <span>{% if running %}ACTIV{% else %}STANDBY{% endif %}</span>
             </div>
         </div>
-
-        {% if status_msg %}
-        <div class="mb-6 p-4 rounded-xl border border-blood/40 glass-smoke text-xs text-rose-200 text-center font-medium shadow-md shadow-blood/20">
-            {{ status_msg }}
-        </div>
-        {% endif %}
 
         <!-- Main Card -->
         <div class="glass-smoke border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
@@ -202,14 +222,15 @@ HTML_TEMPLATE = """
                     <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Grupuri Țintă (câte unul pe rând)</label>
-                    <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Mesaje de Trimis</label>
-                    <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Grupuri Țintă (câte unul pe rând)</label>
+                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Mesaje de Trimis</label>
+                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                    </div>
                 </div>
 
                 <div>
@@ -224,17 +245,44 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 ACTIVEAZĂ VITEZA MAXIMĂ (TURBO)</span>
+                            <span>🔥 PORNEȘTE CU CONSOLĂ LIVE</span>
                         </button>
                     {% endif %}
                 </div>
             </form>
+
+            <!-- Live Console Box -->
+            <div class="space-y-2 pt-4 border-t border-bordercolor">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xs font-semibold uppercase tracking-wider text-rose-400">Jurnal Live (Consolă)</h3>
+                    <span class="text-[10px] text-rose-500 font-mono">Auto-scroll activ</span>
+                </div>
+                <div id="logBox" class="bg-black/90 border border-bordercolor rounded-xl p-4 h-48 overflow-y-auto font-mono text-xs text-rose-400 leading-relaxed shadow-inner space-y-1">
+                    {% for log in logs %}
+                        <div>{{ log }}</div>
+                    {% endfor %}
+                </div>
+            </div>
         </div>
     </div>
 
     <footer class="text-center text-xs text-rose-400/60 font-mono tracking-widest mt-8 drop-shadow">
         // 🪽KISE CAGULA🪽 &bull; GENERATION OF MIRACLES //
     </footer>
+
+    <script>
+        const logBox = document.getElementById('logBox');
+        if (logBox) {
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        {% if running %}
+        setTimeout(() => {
+            location.reload();
+        }, 2000);
+        // Reîmprospătează pagina la fiecare 2 secunde când e pornit ca să vezi mesajele noi în consolă
+        {% endif %}
+    </script>
 </body>
 </html>
 """
