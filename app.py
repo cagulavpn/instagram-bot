@@ -3,7 +3,6 @@ import time
 import threading
 from flask import Flask, render_template_string, request
 from instagrapi import Client
-from instagrapi.exceptions import TwoFactorRequired, ChallengeRequired
 
 app = Flask(__name__)
 
@@ -47,22 +46,8 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             log_message(f"[{bot_name}] ⚠️ Eroare pe '{target_name}': {str(e)}")
             time.sleep(1)
 
-def run_instagram_bot(username, password, verification_code, group_targets, messages_list, bot_name, proxy_raw):
+def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
-    
-    # Amprentă Android modernă acceptată de Instagram
-    client.set_device({
-        "app_version": "310.0.0.35.119",
-        "android_version": 30,
-        "android_release": "11.0",
-        "dpi": "480dpi",
-        "resolution": "1080x2400",
-        "manufacturer": "OnePlus",
-        "device": "IN2023",
-        "model": "OnePlus8Pro",
-        "cpu": "qcom",
-        "version_code": "384561234"
-    })
 
     proxy_url = parse_proxy(proxy_raw)
     if proxy_url:
@@ -74,46 +59,13 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
 
     client.delay_range = [0, 0]
 
-    session_file = f"session_{username}.json"
-    logged_in = False
-
-    # Încercăm să refolosim sesiunea salvată anterioar
-    if os.path.exists(session_file):
-        try:
-            log_message(f"[{bot_name}] 📂 Încerc să refolosesc sesiunea salvată...")
-            client.load_settings(session_file)
-            client.login(username, password)
-            logged_in = True
-            log_message(f"[{bot_name}] ✅ Sesiune încărcată și validată cu succes!")
-        except Exception as e:
-            log_message(f"[{bot_name}] ⚠️ Sesiunea salvată a expirat sau necesită reautentificare.")
-
-    # Dacă nu avem sesiune validă, facem login normal
-    if not logged_in:
-        log_message(f"[{bot_name}] 🔑 Autentificare nouă pentru @{username}...")
-        try:
-            client.login(username, password)
-            client.dump_settings(session_file)
-            log_message(f"[{bot_name}] ✅ Conexiune stabilită și sesiune salvată cu succes!")
-        except TwoFactorRequired:
-            if verification_code:
-                log_message(f"[{bot_name}] 🔐 Se trimite codul 2FA introdus...")
-                try:
-                    client.two_factor_login(verification_code)
-                    client.dump_settings(session_file)
-                    log_message(f"[{bot_name}] ✅ Autentificare 2FA reușită și sesiune salvată!")
-                except Exception as e:
-                    log_message(f"[{bot_name}] ❌ Cod 2FA incorect sau expirat: {str(e)}")
-                    return
-            else:
-                log_message(f"[{bot_name}] ⚠️ Contul cere cod 2FA! Introdu codul primit pe Gmail/SMS în căsuța dedicată și pornește din nou.")
-                return
-        except ChallengeRequired:
-            log_message(f"[{bot_name}] ❌ Instagram cere verificare de securitate. Te rugăm să te loghezi o dată manual pe browser.")
-            return
-        except Exception as e:
-            log_message(f"[{bot_name}] ❌ Eroare la logare: {str(e)}")
-            return
+    log_message(f"[{bot_name}] 🔑 Autentificare prin Session ID...")
+    try:
+        client.login_by_sessionid(session_id.strip())
+        log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes prin Session ID!")
+    except Exception as e:
+        log_message(f"[{bot_name}] ❌ Eroare sesiune (467/Invalid): {str(e)}")
+        return
 
     resolved_threads = {}
     try:
@@ -158,18 +110,17 @@ def index():
         action = request.form.get("action")
         
         if action == "start" and not bot_status["running"]:
-            username = request.form.get("username", "").strip()
-            password = request.form.get("password", "").strip()
-            verification_code = request.form.get("verification_code", "").strip()
+            sessions_raw = request.form.get("sessions", "")
             groups_raw = request.form.get("groups", "")
             messages_raw = request.form.get("messages", "")
             proxy_raw = request.form.get("proxy", "").strip()
             
+            sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
             groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
             messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
             
-            if not username or not password:
-                log_message("❌ Eroare: Introdu username-ul și parola!")
+            if not sessions:
+                log_message("❌ Eroare: Introdu Session ID-ul!")
             elif not groups:
                 log_message("❌ Eroare: Nu ai setat nicio țintă!")
             elif not messages:
@@ -177,11 +128,13 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Sistem pornit pentru @{username}.")
+                log_message(f"🚀 Sistem pornit cu {len(sessions)} conturi.")
                 
-                t = threading.Thread(target=run_instagram_bot, args=(username, password, verification_code, groups, messages, "Agent #1", proxy_raw))
-                t.daemon = True
-                t.start()
+                for idx, session in enumerate(sessions, start=1):
+                    bot_name = f"Agent #{idx}"
+                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name, proxy_raw))
+                    t.daemon = True
+                    t.start()
                     
         elif action == "stop":
             bot_status["running"] = False
@@ -252,7 +205,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // MODERN DEVICE</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // SESSION ID MODE</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -264,19 +217,9 @@ HTML_TEMPLATE = """
         <!-- Main Card -->
         <div class="glass-smoke border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
             <form method="POST" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Username</label>
-                        <input type="text" name="username" placeholder="utilizator" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Parolă</label>
-                        <input type="password" name="password" placeholder="parola" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Cod 2FA (doar prima dată)</label>
-                        <input type="text" name="verification_code" placeholder="6 cifre" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono">
-                    </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Session ID (Cookie)</label>
+                    <textarea name="sessions" rows="2" placeholder="introdu sessionid-ul aici..." class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono"></textarea>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -302,7 +245,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE CU DISPOZITIV MODERN</span>
+                            <span>🔥 PORNEȘTE CU SESSION ID</span>
                         </button>
                     {% endif %}
                 </div>
