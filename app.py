@@ -31,7 +31,7 @@ def parse_proxy(proxy_raw):
         return f"http://{parts[0]}:{parts[1]}"
     return proxy_raw
 
-def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
+def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw, speed_mode):
     client = Client()
     
     proxy_url = parse_proxy(proxy_raw)
@@ -42,7 +42,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare setare proxy: {str(e)}")
 
-    client.delay_range = [0.1, 0.3]
+    client.delay_range = [0.05, 0.2]
 
     log_message(f"[{bot_name}] Conectare securizată în curs...")
     try:
@@ -52,7 +52,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         log_message(f"[{bot_name}] ❌ Sesiune eșuată: {str(e)}")
         return
 
-    # --- PRE-CACHING INTELIGENT LA PORNIRE (Elimină lag-ul) ---
+    # Pre-caching inteligent pentru eliminarea lag-ului
     resolved_threads = {}
     log_message(f"[{bot_name}] 🔍 Caut și memorez ID-urile grupurilor țintă...")
     try:
@@ -82,7 +82,8 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
     msg_index = 0
     messages_sent_in_session = 0
 
-    log_message(f"[{bot_name}] 🚀 Încep bombardamentul instant pe {len(valid_targets)} grupuri!")
+    mode_name = "⚡ FLASH MODE (10 msgs/s)" if speed_mode == "flash" else "Standard Speed"
+    log_message(f"[{bot_name}] 🚀 Pornit în mod: {mode_name}")
 
     while bot_status["running"]:
         shuffled_groups = list(valid_targets)
@@ -100,7 +101,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
                 message_text = messages_list[msg_index % len(messages_list)]
                 msg_index += 1
                 
-                # Trimitere instant direct prin ID-ul memorat
                 client.direct_send(message_text, thread_ids=[thread_id])
                 messages_sent_in_session += 1
                 log_message(f"[{bot_name}] 🎯 Trimis pe '{target_group}' (Total: {messages_sent_in_session})")
@@ -108,16 +108,20 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
             except Exception as e:
                 log_message(f"[{bot_name}] ⚠️ Eroare la trimitere: {str(e)}")
 
-            # Pauză ultra-scurtă între mesaje (aproximativ 0.3 - 0.5 secunde)
-            time.sleep(random.uniform(0.3, 0.5))
+            # Setarea vitezei în funcție de opțiunea aleasă
+            if speed_mode == "flash":
+                time.sleep(random.uniform(0.08, 0.12))  # ~8-10 mesaje pe secundă
+            else:
+                time.sleep(random.uniform(0.3, 0.5))    # viteză standard rapidă
             
-            # Pauză de protecție la fiecare 30 de mesaje ca să eviți blocarea contului
-            if messages_sent_in_session > 0 and messages_sent_in_session % 30 == 0:
-                fatigue_pause = random.uniform(10.0, 20.0)
-                log_message(f"[{bot_name}] 🛡️ Pauză de protecție de {int(fatigue_pause)}s...")
+            # Pauză de protecție automată
+            fatigue_limit = 50 if speed_mode == "flash" else 30
+            if messages_sent_in_session > 0 and messages_sent_in_session % fatigue_limit == 0:
+                fatigue_pause = random.uniform(5.0, 10.0) if speed_mode == "flash" else random.uniform(10.0, 20.0)
+                log_message(f"[{bot_name}] 🛡️ Pauză scurtă de protecție ({int(fatigue_pause)}s)...")
                 time.sleep(fatigue_pause)
 
-        time.sleep(0.5)
+        time.sleep(0.1)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -130,6 +134,7 @@ def index():
             groups_raw = request.form.get("groups", "")
             messages_raw = request.form.get("messages", "")
             proxy_raw = request.form.get("proxy", "").strip()
+            speed_mode = request.form.get("speed_mode", "normal")
             
             sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
             groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
@@ -144,11 +149,11 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Pornire motor ultra-rapid cu {len(sessions)} conturi.")
+                log_message(f"🚀 Pornire motor cu {len(sessions)} conturi (Mod: {speed_mode.upper()}).")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
-                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name, proxy_raw))
+                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name, proxy_raw, speed_mode))
                     t.daemon = True
                     t.start()
                     
@@ -164,7 +169,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Instant Speed Bot</title>
+    <title>Instagram Flash Speed Bot</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -197,13 +202,13 @@ HTML_TEMPLATE = """
             <div>
                 <div class="flex items-center gap-3">
                     <span class="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20 text-xl">⚡</span>
-                    <h1 class="text-xl font-bold tracking-tight text-white">Instagram Instant Speed Bot</h1>
+                    <h1 class="text-xl font-bold tracking-tight text-white">Instagram Flash Control Center</h1>
                 </div>
-                <p class="text-xs text-slate-400 mt-1">Trimitere instantă prin ID-uri pre-memorate</p>
+                <p class="text-xs text-slate-400 mt-1">Alege viteza de trimitere: Standard sau ⚡ Flash (10 msgs/s)</p>
             </div>
             <div class="mt-4 sm:mt-0 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full border {% if running %}bg-emerald-500/10 border-emerald-500/30 text-emerald-400{% else %}bg-slate-800/50 border-slate-700 text-slate-400{% endif %} text-xs font-medium">
                 <span class="w-2 h-2 rounded-full {% if running %}bg-emerald-400 animate-pulse{% else %}bg-slate-500{% endif %}"></span>
-                <span>{% if running %}Sistem Activ (Viteză Instant){% else %}Sistem Oprit{% endif %}</span>
+                <span>{% if running %}Sistem Activ{% else %}Sistem Oprit{% endif %}</span>
             </div>
         </div>
 
@@ -226,9 +231,18 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Proxy HTTP (IP:Port:User:Pass)</label>
-                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Proxy HTTP (IP:Port:User:Pass)</label>
+                        <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-slate-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-2">Mod Viteză</label>
+                        <select name="speed_mode" class="w-full bg-darker/70 border border-amber-500/50 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-amber-500 transition">
+                            <option value="normal">Standard (Sigur / Rapid)</option>
+                            <option value="flash">⚡ Flash Mode (~10 msgs/s - EXTREM)</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="pt-2">
@@ -238,7 +252,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-3.5 px-4 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-xl shadow-lg shadow-amber-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer">
-                            <span>⚡ Pornește Botul la Viteză Instant</span>
+                            <span>🚀 Pornește Botul</span>
                         </button>
                     {% endif %}
                 </div>
@@ -260,7 +274,7 @@ HTML_TEMPLATE = """
     </div>
 
     <footer class="text-center text-xs text-slate-600 mt-8">
-        Instagram Instant Speed Bot &bull; Pre-cached Thread Engine
+        Instagram Flash Speed Bot &bull; Dual Mode Engine
     </footer>
 
     <script>
