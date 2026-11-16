@@ -14,7 +14,7 @@ def log_message(message):
     timestamp = time.strftime("[%H:%M:%S]")
     entry = f"{timestamp} {message}"
     logs.append(entry)
-    if len(logs) > 150:
+    if len(logs) > 100:
         logs.pop(0)
     print(entry)
 
@@ -31,23 +31,22 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker optimizat pentru grupuri cu ID-ul trimis ca string și pauză de 1s"""
+    """Worker optimizat cu pauză de 2 secunde între mesaje"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
         try:
-        # Trimitem thread_id ca string curat, fără conversie la int
             msg = messages_list[msg_idx % len(messages_list)]
             msg_idx += 1
             client.direct_send(text=msg, thread_ids=[str(thread_id)])
             sent_count += 1
             log_message(f"[{bot_name}] 🚀 Trimis pe grupul '{target_name}' (Total: {sent_count})")
             
-            # Pauză de 1 secundă între mesaje
-            time.sleep(1.0)
+            # Pauză setată la 2 secunde (mai lent și sigur)
+            time.sleep(2.0)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare pe grupul '{target_name}': {str(e)}")
-            time.sleep(2)
+            time.sleep(3)
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
@@ -143,7 +142,7 @@ def index():
             bot_status["running"] = False
             log_message("⏹️ S-a ordonat oprirea sistemului.")
 
-    return render_template_string(HTML_TEMPLATE, logs=logs, running=bot_status["running"])
+    return render_template_string(HTML_TEMPLATE, running=bot_status["running"])
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -176,11 +175,10 @@ HTML_TEMPLATE = """
             font-family: 'Plus Jakarta Sans', sans-serif; 
             background-color: #050203;
             background-image: 
-                radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.35) 0%, rgba(5, 2, 3, 0.88) 75%),
-                linear-gradient(to bottom, rgba(5, 2, 3, 0.65), rgba(5, 2, 3, 0.95)),
-                url('https://wallpapercave.com/wp/wp1837544.jpg');
+                linear-gradient(to bottom, rgba(5, 2, 3, 0.78), rgba(5, 2, 3, 0.94)),
+                url('https://wallpapercave.com/wp/wp4905335.jpg');
             background-size: cover;
-            background-position: center top;
+            background-position: center center;
             background-attachment: fixed;
         }
         
@@ -188,10 +186,10 @@ HTML_TEMPLATE = """
         .font-title { font-family: 'Cinzel', serif; }
         
         .glass-smoke {
-            background: rgba(15, 7, 9, 0.82);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            box-shadow: 0 0 40px rgba(220, 38, 38, 0.25), inset 0 0 20px rgba(220, 38, 38, 0.08);
+            background: rgba(15, 7, 9, 0.85);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 0 50px rgba(220, 38, 38, 0.28), inset 0 0 20px rgba(220, 38, 38, 0.08);
         }
         
         ::-webkit-scrollbar { width: 6px; }
@@ -205,10 +203,10 @@ HTML_TEMPLATE = """
         <!-- Header -->
         <div class="flex items-center justify-between glass-smoke border border-bordercolor p-6 rounded-2xl shadow-2xl">
             <div class="flex items-center gap-3.5">
-                <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
+                <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🪽</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // GROUPS FIX</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // KISE EDITION</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -248,24 +246,11 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE PE GRUPURI (1s)</span>
+                            <span>🔥 PORNEȘTE (2s PAUZĂ & KI SE WALLPAPER)</span>
                         </button>
                     {% endif %}
                 </div>
             </form>
-
-            <!-- Live Console Box -->
-            <div class="space-y-2 pt-4 border-t border-bordercolor">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-xs font-semibold uppercase tracking-wider text-rose-400">Jurnal Live (Consolă)</h3>
-                    <span class="text-[10px] text-rose-500 font-mono">Auto-scroll activ</span>
-                </div>
-                <div id="logBox" class="bg-black/90 border border-bordercolor rounded-xl p-4 h-48 overflow-y-auto font-mono text-xs text-rose-400 leading-relaxed shadow-inner space-y-1">
-                    {% for log in logs %}
-                        <div>{{ log }}</div>
-                    {% endfor %}
-                </div>
-            </div>
         </div>
     </div>
 
@@ -274,15 +259,10 @@ HTML_TEMPLATE = """
     </footer>
 
     <script>
-        const logBox = document.getElementById('logBox');
-        if (logBox) {
-            logBox.scrollTop = logBox.scrollHeight;
-        }
-
         {% if running %}
         setTimeout(() => {
             location.reload();
-        }, 2000);
+        }, 3000);
         {% endif %}
     </script>
 </body>
