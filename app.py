@@ -49,20 +49,6 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
 
 def run_instagram_bot(username, password, verification_code, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
-    
-    # Amprentă Android (Samsung Galaxy S9)
-    client.set_device({
-        "app_version": "269.0.0.18.75",
-        "android_version": 26,
-        "android_release": "8.0.0",
-        "dpi": "480dpi",
-        "resolution": "1080x1920",
-        "manufacturer": "Samsung",
-        "device": "Galaxy S9",
-        "model": "SM-G960F",
-        "cpu": "exynos9810",
-        "version_code": "314853275"
-    })
 
     proxy_url = parse_proxy(proxy_raw)
     if proxy_url:
@@ -82,6 +68,7 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
         try:
             log_message(f"[{bot_name}] 📂 Încerc să refolosesc sesiunea salvată...")
             client.load_settings(session_file)
+            client.override_app_version = True
             client.login(username, password)
             logged_in = True
             log_message(f"[{bot_name}] ✅ Sesiune încărcată și validată cu succes!")
@@ -92,6 +79,7 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
     if not logged_in:
         log_message(f"[{bot_name}] 🔑 Autentificare nouă pentru @{username}...")
         try:
+            client.override_app_version = True
             client.login(username, password)
             client.dump_settings(session_file)
             log_message(f"[{bot_name}] ✅ Conexiune stabilită și sesiune salvată cu succes!")
@@ -109,7 +97,7 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
                 log_message(f"[{bot_name}] ⚠️ Contul cere cod 2FA! Introdu codul primit pe Gmail/SMS în căsuța dedicată și pornește din nou.")
                 return
         except ChallengeRequired:
-            log_message(f"[{bot_name}] ❌ Instagram cere verificare de securitate (Challenge). Te rugăm să te loghezi o dată manual pe browser cu acest IP/proxy pentru a debloca contul.")
+            log_message(f"[{bot_name}] ❌ Instagram cere verificare de securitate. Te rugăm să te loghezi o dată manual pe browser.")
             return
         except Exception as e:
             log_message(f"[{bot_name}] ❌ Eroare la logare: {str(e)}")
@@ -252,7 +240,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // SESSION CACHED</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // CLEAN LOGIN</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -302,7 +290,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE CU SALVARE SESIUNE</span>
+                            <span>🔥 PORNEȘTE FĂRĂ ERORI</span>
                         </button>
                     {% endif %}
                 </div>
