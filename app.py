@@ -1,6 +1,5 @@
 import os
 import time
-import random
 import threading
 from flask import Flask, render_template_string, request
 from instagrapi import Client
@@ -21,21 +20,9 @@ def parse_proxy(proxy_raw):
         return f"http://{parts[0]}:{parts[1]}"
     return proxy_raw
 
-def spam_worker(client, thread_id, target_name, messages_list):
-    """Worker paralel dedicat pentru viteză maximă absolută fără limite"""
-    msg_idx = 0
-    while bot_status["running"]:
-        try:
-            msg = messages_list[msg_idx % len(messages_list)]
-            msg_idx += 1
-            client.direct_send(msg, thread_ids=[thread_id])
-        except Exception:
-            pass
-        # Fără sleep pentru viteză nelimitată
-
-def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
+def account_worker(session_id, group_targets, messages_list, proxy_raw):
+    """Worker independent pentru fiecare cont în parte, rulat în paralel absolut"""
     client = Client()
-    
     proxy_url = parse_proxy(proxy_raw)
     if proxy_url:
         try:
@@ -50,7 +37,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
     except Exception:
         return
 
-    # Pre-caching instantaneu pentru ID-urile grupurilor
+    # Căutare rapidă a ID-urilor grupurilor la pornire
     resolved_threads = {}
     try:
         threads = client.direct_threads(amount=40)
@@ -69,13 +56,23 @@ def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
     if not resolved_threads:
         return
 
-    # Lansare fire paralele instant pe fiecare grup
-    worker_threads = []
-    for target_name, thread_id in resolved_threads.items():
-        t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list))
-        t.daemon = True
-        t.start()
-        worker_threads.append(t)
+    # Sub-workeri paraleli pentru fiecare grup al acestui cont
+    def group_spam_loop(thread_id):
+        msg_idx = 0
+        while bot_status["running"]:
+            try:
+                msg = messages_list[msg_idx % len(messages_list)]
+                msg_idx += 1
+                client.direct_send(msg, thread_ids=[thread_id])
+            except Exception:
+                pass
+
+    group_threads = []
+    for _, thread_id in resolved_threads.items():
+        gt = threading.Thread(target=group_spam_loop, args=(thread_id,))
+        gt.daemon = True
+        gt.start()
+        group_threads.append(gt)
 
     while bot_status["running"]:
         time.sleep(0.5)
@@ -99,10 +96,11 @@ def index():
             
             if sessions and groups and messages:
                 bot_status["running"] = True
-                status_msg = "Sistemul a pornit la viteză maximă!"
+                status_msg = f"Sistem pornit cu succes pe {len(sessions)} conturi în paralel!"
                 
+                # Porneste un fir separat pentru FIECARE cont în parte
                 for session in sessions:
-                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, proxy_raw))
+                    t = threading.Thread(target=account_worker, args=(session, groups, messages, proxy_raw))
                     t.daemon = True
                     t.start()
                     
@@ -118,7 +116,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Turbo Minimal Control</title>
+    <title>Instagram Flash Multi-Account Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -148,8 +146,8 @@ HTML_TEMPLATE = """
             <div class="flex items-center gap-3">
                 <span class="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20 text-xl">⚡</span>
                 <div>
-                    <h1 class="text-lg font-bold tracking-tight text-white">Instagram Turbo Panel</h1>
-                    <p class="text-xs text-slate-400">Viteză maximă nelimitată</p>
+                    <h1 class="text-lg font-bold tracking-tight text-white">Instagram Flash Panel</h1>
+                    <p class="text-xs text-slate-400">Viteză maximă multi-account</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-emerald-500/10 border-emerald-500/30 text-emerald-400{% else %}bg-slate-800/50 border-slate-700 text-slate-400{% endif %} text-xs font-medium">
@@ -168,7 +166,7 @@ HTML_TEMPLATE = """
         <div class="bg-card border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
             <form method="POST" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Session ID-uri</label>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Session ID-uri (mai multe conturi separate prin virgulă)</label>
                     <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-darker/70 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition"></textarea>
                 </div>
 
@@ -194,7 +192,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl shadow-lg shadow-rose-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm">
-                            <span>🚀 Pornește la Viteză Maximă Nelimitată</span>
+                            <span>🚀 Pornește Flash Multi-Account (Viteză Maximă)</span>
                         </button>
                     {% endif %}
                 </div>
@@ -203,12 +201,7 @@ HTML_TEMPLATE = """
     </div>
 
     <footer class="text-center text-xs text-slate-600 mt-8">
-        Instagram Minimal Turbo Control &bull; Ultra Fast Engine
+        Instagram Flash Multi-Account Control &bull; Full Parallel Engine
     </footer>
 </body>
 </html>
-"""
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
