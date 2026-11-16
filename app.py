@@ -76,7 +76,8 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
 
     log_message(f"[{bot_name}] 🔑 Autentificare pentru @{username}...")
     try:
-        client.login(username, password, override_app_version=True)
+        # Corectat: am eliminat argumentul neacceptat override_app_version
+        client.login(username, password)
         log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes pentru @{username}!")
     except TwoFactorRequired:
         if verification_code:
@@ -234,7 +235,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // LOGIN & 2FA</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // STABILIZED</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -284,7 +285,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE CU SUPORT 2FA</span>
+                            <span>🔥 PORNEȘTE SISTEMUL STABIL</span>
                         </button>
                     {% endif %}
                 </div>
