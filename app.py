@@ -30,7 +30,6 @@ def spam_worker(client, thread_id, target_name, messages_list):
             client.direct_send(msg, thread_ids=[thread_id])
         except Exception:
             pass
-        # Fără sleep pentru viteză nelimitată
 
 def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
     client = Client()
@@ -49,7 +48,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
     except Exception:
         return
 
-    # Pre-caching instantaneu pentru ID-urile grupurilor
     resolved_threads = {}
     try:
         threads = client.direct_threads(amount=40)
@@ -68,7 +66,6 @@ def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
     if not resolved_threads:
         return
 
-    # Lansare fire paralele instant pe fiecare grup
     worker_threads = []
     for target_name, thread_id in resolved_threads.items():
         t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list))
@@ -98,7 +95,7 @@ def index():
             
             if sessions and groups and messages:
                 bot_status["running"] = True
-                status_msg = "⚡ DEMONIC CORE ACTIVAT: Fluxul de mesaje a fost eliberat la viteză maximă!"
+                status_msg = "⚡ KISE CAGULA CORE ACTIVAT: Fluxul a fost eliberat la viteză maximă!"
                 
                 for session in sessions:
                     t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, proxy_raw))
@@ -117,7 +114,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Bloodline Turbo Panel</title>
+    <title>🪽KISE CAGULA🪽 - Turbo Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -129,77 +126,94 @@ HTML_TEMPLATE = """
                         smoke: '#0f0709',
                         blood: '#dc2626',
                         bloodglow: '#ef4444',
-                        bordercolor: '#2a0e14'
+                        bordercolor: '#3f111a'
                     }
                 }
             }
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #050203; }
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #050203;
+            /* Fundal cu Kagami, Kise, Aomine, Akashi, Kuroko și Midorima + strat de fum roșu */
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.35) 0%, rgba(5, 2, 3, 0.88) 75%),
+                linear-gradient(to bottom, rgba(5, 2, 3, 0.65), rgba(5, 2, 3, 0.95)),
+                url('https://wallpapercave.com/wp/wp1837544.jpg');
+            background-size: cover;
+            background-position: center top;
+            background-attachment: fixed;
+        }
+        
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         .font-title { font-family: 'Cinzel', serif; }
-        .smoke-glow {
-            box-shadow: 0 0 35px rgba(220, 38, 38, 0.15), inset 0 0 15px rgba(220, 38, 38, 0.05);
+        
+        .glass-smoke {
+            background: rgba(15, 7, 9, 0.78);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 0 40px rgba(220, 38, 38, 0.25), inset 0 0 20px rgba(220, 38, 38, 0.08);
         }
     </style>
 </head>
-<body class="bg-void text-slate-100 min-h-screen py-12 px-4 sm:px-6 lg:px-8 flex flex-col justify-between selection:bg-blood selection:text-white">
+<body class="text-slate-100 min-h-screen py-10 px-4 sm:px-6 lg:px-8 flex flex-col justify-between selection:bg-blood selection:text-white">
 
     <div class="max-w-xl mx-auto w-full">
         <!-- Header -->
-        <div class="flex items-center justify-between bg-smoke border border-bordercolor p-6 rounded-2xl shadow-2xl mb-6 smoke-glow backdrop-blur-xl">
+        <div class="flex items-center justify-between glass-smoke border border-bordercolor p-6 rounded-2xl shadow-2xl mb-6">
             <div class="flex items-center gap-3.5">
-                <span class="p-3 bg-blood/10 text-bloodglow rounded-xl border border-blood/30 text-xl shadow-lg shadow-blood/20 animate-pulse">🔥</span>
+                <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
-                    <h1 class="text-lg font-bold tracking-wider text-rose-100 font-title">BLOODLINE CORE</h1>
-                    <p class="text-xs text-rose-500/80 font-mono tracking-tight">ANIME SHADOW ENGINE // MAX SPEED</p>
+                    <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // TURBO</p>
                 </div>
             </div>
-            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/20 border-blood/50 text-rose-300 shadow-lg shadow-blood/30{% else %}bg-slate-900/80 border-slate-800 text-slate-400{% endif %} text-xs font-medium">
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
                 <span class="w-2 h-2 rounded-full {% if running %}bg-bloodglow animate-ping{% else %}bg-slate-600{% endif %}"></span>
-                <span>{% if running %}ACTIV (FURIOS){% else %}STANDBY{% endif %}</span>
+                <span>{% if running %}ACTIV{% else %}STANDBY{% endif %}</span>
             </div>
         </div>
 
         {% if status_msg %}
-        <div class="mb-6 p-4 rounded-xl border border-blood/30 bg-smoke text-xs text-rose-300 text-center font-medium shadow-md shadow-blood/10">
+        <div class="mb-6 p-4 rounded-xl border border-blood/40 glass-smoke text-xs text-rose-200 text-center font-medium shadow-md shadow-blood/20">
             {{ status_msg }}
         </div>
         {% endif %}
 
         <!-- Main Card -->
-        <div class="bg-smoke border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl smoke-glow space-y-5">
+        <div class="glass-smoke border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
             <form method="POST" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400/80 mb-1.5">Session ID-uri (Conturi)</label>
-                    <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-void border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-700 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Session ID-uri (Conturi)</label>
+                    <textarea name="sessions" rows="2" placeholder="cookie_1, cookie_2..." class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400/80 mb-1.5">Grupuri Țintă (câte unul pe rând)</label>
-                    <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-void border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-700 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Grupuri Țintă (câte unul pe rând)</label>
+                    <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400/80 mb-1.5">Mesaje de Trimis</label>
-                    <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-void border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-700 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Mesaje de Trimis</label>
+                    <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400/80 mb-1.5">Proxy HTTP</label>
-                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-void border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-rose-200/90 focus:outline-none focus:border-blood transition shadow-inner">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Proxy HTTP</label>
+                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
                 </div>
 
                 <div class="pt-3">
                     {% if running %}
-                        <button type="submit" name="action" value="stop" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 to-rose-700 hover:from-red-600 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-900/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-500/40">
-                            <span>⏹ OPREȘTE MĂCELUL</span>
+                        <button type="submit" name="action" value="stop" class="w-full py-4 px-4 bg-gradient-to-r from-red-800 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-900/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-500/50">
+                            <span>⏹ OPREȘTE SISTEMUL</span>
                         </button>
                     {% else %}
-                        <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-600 via-rose-600 to-blood hover:from-red-500 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/40 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 ACTIVEAZĂ PUTEREA MAXIMĂ (TURBO)</span>
+                        <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
+                            <span>🔥 ACTIVEAZĂ VITEZA MAXIMĂ (TURBO)</span>
                         </button>
                     {% endif %}
                 </div>
@@ -207,8 +221,8 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <footer class="text-center text-xs text-rose-900/60 font-mono tracking-widest mt-8">
-        // DARK ANIME EDITION &bull; UNLIMITED FLUX //
+    <footer class="text-center text-xs text-rose-400/60 font-mono tracking-widest mt-8 drop-shadow">
+        // 🪽KISE CAGULA🪽 &bull; GENERATION OF MIRACLES //
     </footer>
 </body>
 </html>
