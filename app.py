@@ -31,22 +31,22 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker optimizat cu pauză de 1 secundă între mesaje"""
+    """Worker optimizat pentru grupuri cu ID-ul trimis ca string și pauză de 1s"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
         try:
+        # Trimitem thread_id ca string curat, fără conversie la int
             msg = messages_list[msg_idx % len(messages_list)]
             msg_idx += 1
-            # Trimitem mesajul cu thread_id convertit în int
-            client.direct_send(text=msg, thread_ids=[int(thread_id)])
+            client.direct_send(text=msg, thread_ids=[str(thread_id)])
             sent_count += 1
-            log_message(f"[{bot_name}] 🚀 Trimis pe '{target_name}' (Total: {sent_count})")
+            log_message(f"[{bot_name}] 🚀 Trimis pe grupul '{target_name}' (Total: {sent_count})")
             
-            # Pauză setată la 1 secundă
+            # Pauză de 1 secundă între mesaje
             time.sleep(1.0)
         except Exception as e:
-            log_message(f"[{bot_name}] ⚠️ Eroare pe '{target_name}': {str(e)}")
+            log_message(f"[{bot_name}] ⚠️ Eroare pe grupul '{target_name}': {str(e)}")
             time.sleep(2)
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
@@ -95,7 +95,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
         return
 
-    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel optimizat...")
+    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel pe grupuri...")
     worker_threads = []
     for target_name, thread_id in resolved_threads.items():
         t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list, bot_name))
@@ -131,7 +131,7 @@ def index():
             else:
                 bot_status["running"] = True
                 logs.clear()
-                log_message(f"🚀 Sistem pornit cu {len(sessions)} conturi.")
+                log_message(f"🚀 Sistem pornit pe grupuri cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
@@ -208,7 +208,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // 1s SPEED</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // GROUPS FIX</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -248,7 +248,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE LA 1 SECUNDĂ</span>
+                            <span>🔥 PORNEȘTE PE GRUPURI (1s)</span>
                         </button>
                     {% endif %}
                 </div>
