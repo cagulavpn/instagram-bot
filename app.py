@@ -74,29 +74,46 @@ def run_instagram_bot(username, password, verification_code, group_targets, mess
 
     client.delay_range = [0, 0]
 
-    log_message(f"[{bot_name}] 🔑 Autentificare pentru @{username}...")
-    try:
-        # Corectat: am eliminat argumentul neacceptat override_app_version
-        client.login(username, password)
-        log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes pentru @{username}!")
-    except TwoFactorRequired:
-        if verification_code:
-            log_message(f"[{bot_name}] 🔐 Se trimite codul 2FA introdus...")
-            try:
-                client.two_factor_login(verification_code)
-                log_message(f"[{bot_name}] ✅ Autentificare 2FA reușită!")
-            except Exception as e:
-                log_message(f"[{bot_name}] ❌ Cod 2FA incorect sau expirat: {str(e)}")
+    session_file = f"session_{username}.json"
+    logged_in = False
+
+    # Încercăm să refolosim sesiunea salvată anterioar pentru a scăpa de cererile de cod
+    if os.path.exists(session_file):
+        try:
+            log_message(f"[{bot_name}] 📂 Încerc să refolosesc sesiunea salvată...")
+            client.load_settings(session_file)
+            client.login(username, password)
+            logged_in = True
+            log_message(f"[{bot_name}] ✅ Sesiune încărcată și validată cu succes!")
+        except Exception as e:
+            log_message(f"[{bot_name}] ⚠️ Sesiunea salvată a expirat sau necesită reautentificare.")
+
+    # Dacă nu avem sesiune validă, facem login normal
+    if not logged_in:
+        log_message(f"[{bot_name}] 🔑 Autentificare nouă pentru @{username}...")
+        try:
+            client.login(username, password)
+            client.dump_settings(session_file)
+            log_message(f"[{bot_name}] ✅ Conexiune stabilită și sesiune salvată cu succes!")
+        except TwoFactorRequired:
+            if verification_code:
+                log_message(f"[{bot_name}] 🔐 Se trimite codul 2FA introdus...")
+                try:
+                    client.two_factor_login(verification_code)
+                    client.dump_settings(session_file)
+                    log_message(f"[{bot_name}] ✅ Autentificare 2FA reușită și sesiune salvată!")
+                except Exception as e:
+                    log_message(f"[{bot_name}] ❌ Cod 2FA incorect sau expirat: {str(e)}")
+                    return
+            else:
+                log_message(f"[{bot_name}] ⚠️ Contul cere cod 2FA! Introdu codul primit pe Gmail/SMS în căsuța dedicată și pornește din nou.")
                 return
-        else:
-            log_message(f"[{bot_name}] ⚠️ Contul cere cod 2FA! Introdu codul primit pe Gmail/SMS în căsuța dedicată și pornește din nou.")
+        except ChallengeRequired:
+            log_message(f"[{bot_name}] ❌ Instagram cere verificare de securitate (Challenge). Te rugăm să te loghezi o dată manual pe browser cu acest IP/proxy pentru a debloca contul.")
             return
-    except ChallengeRequired:
-        log_message(f"[{bot_name}] ❌ Instagram cere verificare de securitate (Challenge). Te rugăm să te loghezi o dată manual pe browser cu acest IP/proxy pentru a debloca contul.")
-        return
-    except Exception as e:
-        log_message(f"[{bot_name}] ❌ Eroare la logare: {str(e)}")
-        return
+        except Exception as e:
+            log_message(f"[{bot_name}] ❌ Eroare la logare: {str(e)}")
+            return
 
     resolved_threads = {}
     try:
@@ -235,7 +252,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // STABILIZED</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // SESSION CACHED</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -257,8 +274,8 @@ HTML_TEMPLATE = """
                         <input type="password" name="password" placeholder="parola" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner">
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Cod 2FA / Gmail</label>
-                        <input type="text" name="verification_code" placeholder="6 cifre (dacă e cerut)" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Cod 2FA (doar prima dată)</label>
+                        <input type="text" name="verification_code" placeholder="6 cifre" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono">
                     </div>
                 </div>
 
@@ -285,7 +302,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE SISTEMUL STABIL</span>
+                            <span>🔥 PORNEȘTE CU SALVARE SESIUNE</span>
                         </button>
                     {% endif %}
                 </div>
