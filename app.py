@@ -6,17 +6,11 @@ from instagrapi import Client
 
 app = Flask(__name__)
 
-logs = []
 bot_status = {"running": False}
 
 def log_message(message):
-    global logs
     timestamp = time.strftime("[%H:%M:%S]")
-    entry = f"{timestamp} {message}"
-    logs.append(entry)
-    if len(logs) > 100:
-        logs.pop(0)
-    print(entry)
+    print(f"{timestamp} {message}")
 
 def parse_proxy(proxy_raw):
     if not proxy_raw:
@@ -31,7 +25,7 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker optimizat cu pauză de 2 secunde între mesaje"""
+    """Worker optimizat pentru grupuri cu pauză de 3 secunde"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
@@ -42,11 +36,11 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             sent_count += 1
             log_message(f"[{bot_name}] 🚀 Trimis pe grupul '{target_name}' (Total: {sent_count})")
             
-            # Pauză setată la 2 secunde (mai lent și sigur)
-            time.sleep(2.0)
+            # Pauză de siguranță de 3 secunde
+            time.sleep(3.0)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare pe grupul '{target_name}': {str(e)}")
-            time.sleep(3)
+            time.sleep(4)
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
@@ -107,7 +101,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global logs, bot_status
+    global bot_status
     if request.method == "POST":
         action = request.form.get("action")
         
@@ -121,15 +115,8 @@ def index():
             groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
             messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
             
-            if not sessions:
-                log_message("❌ Eroare: Introdu Session ID-ul!")
-            elif not groups:
-                log_message("❌ Eroare: Nu ai setat nicio țintă!")
-            elif not messages:
-                log_message("❌ Eroare: Nu ai adăugat mesaje!")
-            else:
+            if sessions and groups and messages:
                 bot_status["running"] = True
-                logs.clear()
                 log_message(f"🚀 Sistem pornit pe grupuri cu {len(sessions)} conturi.")
                 
                 for idx, session in enumerate(sessions, start=1):
@@ -150,7 +137,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🪽KISE CAGULA🪽 - Turbo Panel</title>
+    <title>🪽Kise Cagulă - Turbo Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -175,7 +162,7 @@ HTML_TEMPLATE = """
             font-family: 'Plus Jakarta Sans', sans-serif; 
             background-color: #050203;
             background-image: 
-                linear-gradient(to bottom, rgba(5, 2, 3, 0.78), rgba(5, 2, 3, 0.94)),
+                linear-gradient(to bottom, rgba(5, 2, 3, 0.40), rgba(5, 2, 3, 0.70)),
                 url('https://wallpapercave.com/wp/wp4905335.jpg');
             background-size: cover;
             background-position: center center;
@@ -186,10 +173,11 @@ HTML_TEMPLATE = """
         .font-title { font-family: 'Cinzel', serif; }
         
         .glass-smoke {
-            background: rgba(15, 7, 9, 0.85);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
-            box-shadow: 0 0 50px rgba(220, 38, 38, 0.28), inset 0 0 20px rgba(220, 38, 38, 0.08);
+            background: rgba(15, 7, 9, 0.55);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(220, 38, 38, 0.35);
+            box-shadow: 0 0 40px rgba(220, 38, 38, 0.2), inset 0 0 15px rgba(220, 38, 38, 0.05);
         }
         
         ::-webkit-scrollbar { width: 6px; }
@@ -201,12 +189,12 @@ HTML_TEMPLATE = """
 
     <div class="max-w-2xl mx-auto w-full space-y-6">
         <!-- Header -->
-        <div class="flex items-center justify-between glass-smoke border border-bordercolor p-6 rounded-2xl shadow-2xl">
+        <div class="flex items-center justify-between glass-smoke p-6 rounded-2xl shadow-2xl">
             <div class="flex items-center gap-3.5">
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🪽</span>
                 <div>
-                    <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // KISE EDITION</p>
+                    <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽Kise Cagulă</h1>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // 3s SPEED</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -216,27 +204,27 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Main Card -->
-        <div class="glass-smoke border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
+        <div class="glass-smoke p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
             <form method="POST" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Session ID (Cookie)</label>
-                    <textarea name="sessions" rows="2" placeholder="introdu sessionid-ul aici..." class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono"></textarea>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Session ID (Cookie)</label>
+                    <textarea name="sessions" rows="2" placeholder="introdu sessionid-ul aici..." class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono"></textarea>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Grupuri Țintă (câte unul pe rând)</label>
-                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Grupuri Țintă (câte unul pe rând)</label>
+                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Mesaje de Trimis</label>
-                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Mesaje de Trimis</label>
+                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Proxy HTTP</label>
-                    <input type="text" name="proxy" value="38.154.185.97:6370:fvuubeod:0xk9re2xi909" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Proxy HTTP</label>
+                    <input type="text" name="proxy" value="38.154.185.97:6370:fvuubeod:0xk9re2xi909" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
                 </div>
 
                 <div class="pt-3">
@@ -246,7 +234,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE (2s PAUZĂ & KI SE WALLPAPER)</span>
+                            <span>🔥 PORNEȘTE LA 3 SECUNDE</span>
                         </button>
                     {% endif %}
                 </div>
@@ -254,8 +242,8 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <footer class="text-center text-xs text-rose-400/60 font-mono tracking-widest mt-8 drop-shadow">
-        // 🪽KISE CAGULA🪽 &bull; GENERATION OF MIRACLES //
+    <footer class="text-center text-xs text-rose-400/70 font-mono tracking-widest mt-8 drop-shadow">
+        // 🪽Kise Cagulă &bull; GENERATION OF MIRACLES //
     </footer>
 
     <script>
