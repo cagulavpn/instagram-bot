@@ -21,15 +21,18 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list):
-    """Worker paralel dedicat pentru viteză maximă absolută fără limite"""
+    """Worker paralel dedicat pentru viteză maximă, cu afișare de erori în consolă"""
     msg_idx = 0
     while bot_status["running"]:
         try:
             msg = messages_list[msg_idx % len(messages_list)]
             msg_idx += 1
             client.direct_send(msg, thread_ids=[thread_id])
-        except Exception:
-            pass
+            print(f"[SUCCESS] Trimis pe '{target_name}'")
+        except Exception as e:
+            print(f"[ERROR LA TRIMITERE] Pe '{target_name}': {str(e)}")
+        # O micro-pauză de securitate de 0.05s ca să nu blocheze nucleul complet
+        time.sleep(0.05)
 
 def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
     client = Client()
@@ -38,18 +41,24 @@ def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
     if proxy_url:
         try:
             client.set_proxy(proxy_url)
-        except Exception:
-            pass
+            print(f"[PROXY] Setat cu succes pentru sesiune.")
+        except Exception as e:
+            print(f"[PROXY ERROR] {str(e)}")
 
     client.delay_range = [0, 0]
 
+    print(f"[LOGIN] Încercare de autentificare cu sesiune...")
     try:
         client.login_by_sessionid(session_id.strip())
-    except Exception:
+        print(f"[LOGIN] Autentificare reușită!")
+    except Exception as e:
+        print(f"[LOGIN ERROR] Eroare sesiune: {str(e)}")
         return
 
+    # Pre-caching instantaneu pentru ID-urile grupurilor
     resolved_threads = {}
     try:
+        print(f"[CACHE] Caut grupurile țintă în inbox...")
         threads = client.direct_threads(amount=40)
         for target in group_targets:
             target_clean = target.strip()
@@ -59,13 +68,16 @@ def run_instagram_bot(session_id, group_targets, messages_list, proxy_raw):
                 thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
                 if target_clean.lower() in thread_name.lower() or target_clean == str(thread.id):
                     resolved_threads[target_clean] = thread.id
+                    print(f"[FOUND] Grup găsit: '{target_clean}' -> ID: {thread.id}")
                     break
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[CACHE ERROR] {str(e)}")
 
     if not resolved_threads:
+        print(f"[EROARE] Niciun grup țintă valid nu a fost găsit în inbox-ul acestui cont!")
         return
 
+    # Lansare fire paralele instant pe fiecare grup
     worker_threads = []
     for target_name, thread_id in resolved_threads.items():
         t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list))
@@ -95,7 +107,7 @@ def index():
             
             if sessions and groups and messages:
                 bot_status["running"] = True
-                status_msg = "⚡ KISE CAGULA CORE ACTIVAT: Fluxul a fost eliberat la viteză maximă!"
+                status_msg = "⚡ KISE CAGULA CORE ACTIVAT: Fluxul a fost eliberat!"
                 
                 for session in sessions:
                     t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, proxy_raw))
@@ -138,7 +150,6 @@ HTML_TEMPLATE = """
         body { 
             font-family: 'Plus Jakarta Sans', sans-serif; 
             background-color: #050203;
-            /* Fundal cu Kagami, Kise, Aomine, Akashi, Kuroko și Midorima + strat de fum roșu */
             background-image: 
                 radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.35) 0%, rgba(5, 2, 3, 0.88) 75%),
                 linear-gradient(to bottom, rgba(5, 2, 3, 0.65), rgba(5, 2, 3, 0.95)),
