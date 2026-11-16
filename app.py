@@ -3,6 +3,7 @@ import time
 import threading
 from flask import Flask, render_template_string, request
 from instagrapi import Client
+from instagrapi.exceptions import TwoFactorRequired, ChallengeRequired
 
 app = Flask(__name__)
 
@@ -46,7 +47,7 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             log_message(f"[{bot_name}] ⚠️ Eroare pe '{target_name}': {str(e)}")
             time.sleep(1)
 
-def run_instagram_bot(username, password, group_targets, messages_list, bot_name, proxy_raw):
+def run_instagram_bot(username, password, verification_code, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
     
     # Amprentă Android (Samsung Galaxy S9)
@@ -77,6 +78,21 @@ def run_instagram_bot(username, password, group_targets, messages_list, bot_name
     try:
         client.login(username, password, override_app_version=True)
         log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes pentru @{username}!")
+    except TwoFactorRequired:
+        if verification_code:
+            log_message(f"[{bot_name}] 🔐 Se trimite codul 2FA introdus...")
+            try:
+                client.two_factor_login(verification_code)
+                log_message(f"[{bot_name}] ✅ Autentificare 2FA reușită!")
+            except Exception as e:
+                log_message(f"[{bot_name}] ❌ Cod 2FA incorect sau expirat: {str(e)}")
+                return
+        else:
+            log_message(f"[{bot_name}] ⚠️ Contul cere cod 2FA! Introdu codul primit pe Gmail/SMS în căsuța dedicată și pornește din nou.")
+            return
+    except ChallengeRequired:
+        log_message(f"[{bot_name}] ❌ Instagram cere verificare de securitate (Challenge). Te rugăm să te loghezi o dată manual pe browser cu acest IP/proxy pentru a debloca contul.")
+        return
     except Exception as e:
         log_message(f"[{bot_name}] ❌ Eroare la logare: {str(e)}")
         return
@@ -126,6 +142,7 @@ def index():
         if action == "start" and not bot_status["running"]:
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "").strip()
+            verification_code = request.form.get("verification_code", "").strip()
             groups_raw = request.form.get("groups", "")
             messages_raw = request.form.get("messages", "")
             proxy_raw = request.form.get("proxy", "").strip()
@@ -134,7 +151,7 @@ def index():
             messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
             
             if not username or not password:
-                log_message("❌ Eroare: Introdu username-ul și parola în căsuțele dedicate!")
+                log_message("❌ Eroare: Introdu username-ul și parola!")
             elif not groups:
                 log_message("❌ Eroare: Nu ai setat nicio țintă!")
             elif not messages:
@@ -144,7 +161,7 @@ def index():
                 logs.clear()
                 log_message(f"🚀 Sistem pornit pentru @{username}.")
                 
-                t = threading.Thread(target=run_instagram_bot, args=(username, password, groups, messages, "Agent #1", proxy_raw))
+                t = threading.Thread(target=run_instagram_bot, args=(username, password, verification_code, groups, messages, "Agent #1", proxy_raw))
                 t.daemon = True
                 t.start()
                     
@@ -217,7 +234,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🔥</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽KISE CAGULA🪽</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // LOGIN SEPARAT</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // LOGIN & 2FA</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -229,14 +246,18 @@ HTML_TEMPLATE = """
         <!-- Main Card -->
         <div class="glass-smoke border border-bordercolor p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
             <form method="POST" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Username Instagram</label>
-                        <input type="text" name="username" placeholder="ex: ryotaa__kiseee" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Username</label>
+                        <input type="text" name="username" placeholder="utilizator" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner">
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Parolă Instagram</label>
-                        <input type="password" name="password" placeholder="parola ta" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Parolă</label>
+                        <input type="password" name="password" placeholder="parola" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Cod 2FA / Gmail</label>
+                        <input type="text" name="verification_code" placeholder="6 cifre (dacă e cerut)" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono">
                     </div>
                 </div>
 
@@ -263,7 +284,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE CU USER & PAROLĂ SEPARATE</span>
+                            <span>🔥 PORNEȘTE CU SUPORT 2FA</span>
                         </button>
                     {% endif %}
                 </div>
