@@ -31,7 +31,7 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker optimizat cu semnătură de dispozitiv pentru evitarea erorii 1404006"""
+    """Worker optimizat cu amprentă de dispozitiv și pauză de siguranță"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
@@ -42,8 +42,8 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             sent_count += 1
             log_message(f"[{bot_name}] 🚀 Trimis pe '{target_name}' (Total: {sent_count})")
             
-            # Pauză scurtă de 0.2s pentru stabilitate maximă
-            time.sleep(0.2)
+            # Pauză optimizată anti-spam
+            time.sleep(0.3)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare pe '{target_name}': {str(e)}")
             time.sleep(1)
@@ -51,7 +51,7 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
     
-    # Setăm amprenta unui dispozitiv Android real pentru a trece de blocarea API
+    # Amprentă Android (Samsung Galaxy S9)
     client.set_device({
         "app_version": "269.0.0.18.75",
         "android_version": 26,
@@ -251,7 +251,7 @@ HTML_TEMPLATE = """
 
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5">Proxy HTTP</label>
-                    <input type="text" name="proxy" value="191.96.254.138:6185:fvuubeod:0xk9re2xi909" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    <input type="text" name="proxy" value="38.154.185.97:6370:fvuubeod:0xk9re2xi909" class="w-full bg-black/75 border border-bordercolor rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
                 </div>
 
                 <div class="pt-3">
@@ -261,7 +261,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE CU AMPRENTĂ DE DISPOZITIV</span>
+                            <span>🔥 PORNEȘTE CU NOUL PROXY</span>
                         </button>
                     {% endif %}
                 </div>
