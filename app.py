@@ -25,7 +25,7 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker optimizat pentru grupuri cu pauză de 3 secunde"""
+    """Worker optimizat pentru grupuri cu pauză de 50 de secunde"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
@@ -36,11 +36,11 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             sent_count += 1
             log_message(f"[{bot_name}] 🚀 Trimis pe grupul '{target_name}' (Total: {sent_count})")
             
-            # Pauză de siguranță de 3 secunde
-            time.sleep(3.0)
+            # Pauză de siguranță de 50 de secunde
+            time.sleep(50.0)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare pe grupul '{target_name}': {str(e)}")
-            time.sleep(4)
+            time.sleep(10)
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
@@ -194,7 +194,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🪽</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽Kise Cagulă</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // 3s SPEED</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // 50s SPEED</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -234,7 +234,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE LA 3 SECUNDE</span>
+                            <span>🔥 PORNEȘTE LA 50 SECUNDE</span>
                         </button>
                     {% endif %}
                 </div>
