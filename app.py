@@ -31,7 +31,7 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker optimizat cu pauză mică de siguranță anti-eroare 1404006"""
+    """Worker optimizat cu semnătură de dispozitiv pentru evitarea erorii 1404006"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
@@ -42,15 +42,29 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             sent_count += 1
             log_message(f"[{bot_name}] 🚀 Trimis pe '{target_name}' (Total: {sent_count})")
             
-            # Pauză scurtă de 0.3s între mesaje pentru a preveni blocarea de la Instagram (error_code: 1404006)
-            time.sleep(0.3)
+            # Pauză scurtă de 0.2s pentru stabilitate maximă
+            time.sleep(0.2)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare pe '{target_name}': {str(e)}")
-            time.sleep(1.5)
+            time.sleep(1)
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
     client = Client()
     
+    # Setăm amprenta unui dispozitiv Android real pentru a trece de blocarea API
+    client.set_device({
+        "app_version": "269.0.0.18.75",
+        "android_version": 26,
+        "android_release": "8.0.0",
+        "dpi": "480dpi",
+        "resolution": "1080x1920",
+        "manufacturer": "Samsung",
+        "device": "Galaxy S9",
+        "model": "SM-G960F",
+        "cpu": "exynos9810",
+        "version_code": "314853275"
+    })
+
     proxy_url = parse_proxy(proxy_raw)
     if proxy_url:
         try:
@@ -58,6 +72,8 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
             log_message(f"[{bot_name}] 🌐 Proxy setat cu succes.")
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare proxy: {str(e)}")
+
+    client.delay_range = [0, 0]
 
     log_message(f"[{bot_name}] 🔑 Conectare la cont...")
     try:
@@ -245,7 +261,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE CU CONSOLĂ LIVE</span>
+                            <span>🔥 PORNEȘTE CU AMPRENTĂ DE DISPOZITIV</span>
                         </button>
                     {% endif %}
                 </div>
