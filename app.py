@@ -6,11 +6,17 @@ import threading
 from flask import Flask, render_template_string, request
 from instagrapi import Client
 
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
 app = Flask(__name__)
 
 bot_status = {
     "running": False,
     "delay": 50,
+    "group_meta_running": False,
     "group_meta_delay": 5,
     "locked_group_name": "",
     "locked_group_photo_path": "",
@@ -102,21 +108,37 @@ def set_group_title(client, thread_id, desired_name):
     )
 
 
-def set_group_photo(client, thread_id, photo_path):
+def set_group_photo(client, thread_id, photo_path, bot_name="GroupGuard"):
     tid = str(thread_id)
     if not photo_path or not os.path.exists(photo_path):
-        return False
-    if hasattr(client, "direct_thread_update_image"):
-        return client.direct_thread_update_image(tid, photo_path)
-    if hasattr(client, "direct_update_photo"):
-        return client.direct_update_photo(tid, photo_path)
+        raise FileNotFoundError(f"Fișierul foto lipsește: {photo_path}")
+
+    for method_name in ("direct_thread_update_photo", "direct_thread_update_image", "direct_update_photo"):
+        fn = getattr(client, method_name, None)
+        if callable(fn):
+            res = fn(tid, photo_path)
+            log_message(f"[{bot_name}] 🖼️ Poză trimisă prin {method_name} pe thread {tid}")
+            return res
+
     with open(photo_path, "rb") as f:
         img_bytes = f.read()
-    client.private_request(
+
+    last_err = None
+    for endpoint in (
+        f"direct_v2/threads/{tid}/update_group_image/",
         f"direct_v2/threads/{tid}/update_image/",
-        files={"image": (os.path.basename(photo_path), img_bytes, "image/jpeg")},
-    )
-    return True
+    ):
+        try:
+            res = client.private_request(
+                endpoint,
+                files={"image": ("group_photo.jpg", img_bytes, "image/jpeg")},
+            )
+            log_message(f"[{bot_name}] 🖼️ Poză trimisă prin {endpoint} pe thread {tid}")
+            return res
+        except Exception as e:
+            last_err = e
+
+    raise RuntimeError(f"Toate metodele de schimbare poză au eșuat: {last_err}")
 
 
 def group_meta_worker(client, thread_id, target_name, bot_name):
@@ -143,7 +165,7 @@ def group_meta_worker(client, thread_id, target_name, bot_name):
                 log_message(f"[{bot_name}] 🔒 Nume grup restaurat la '{desired_name}' pe '{target_name}'")
 
             if photo_path and os.path.exists(photo_path):
-                set_group_photo(client, tid, photo_path)
+                set_group_photo(client, tid, photo_path, bot_name)
                 log_message(f"[{bot_name}] 🖼️ Poză grup restaurată pe '{target_name}'")
 
             current_delay = max(1, min(120, int(bot_status.get("group_meta_delay", 5))))
@@ -237,12 +259,20 @@ def clamp_seconds(raw_val, default_val):
 def save_uploaded_group_photo(file_storage):
     if not file_storage or not file_storage.filename:
         return None, None
-    ext = os.path.splitext(file_storage.filename)[1].lower()
-    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
-        ext = ".jpg"
-    tmp_path = os.path.join(tempfile.gettempdir(), f"kise_group_photo{ext}")
-    file_storage.save(tmp_path)
-    return tmp_path, file_storage.filename
+    raw_tmp = os.path.join(tempfile.gettempdir(), "kise_group_photo_raw")
+    jpg_tmp = os.path.join(tempfile.gettempdir(), "kise_group_photo.jpg")
+    file_storage.save(raw_tmp)
+
+    if Image is not None:
+        try:
+            with Image.open(raw_tmp) as im:
+                rgb_im = im.convert("RGB")
+                rgb_im.save(jpg_tmp, format="JPEG", quality=92)
+            return jpg_tmp, file_storage.filename
+        except Exception as e:
+            log_message(f"⚠️ Conversie JPG eșuată, folosesc fișierul direct: {str(e)}")
+
+    return raw_tmp, file_storage.filename
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -267,7 +297,8 @@ def index():
         saved_photo_path, uploaded_filename = save_uploaded_group_photo(uploaded_photo)
         if saved_photo_path:
             bot_status["locked_group_photo_path"] = saved_photo_path
-            bot_status["locked_group_photo_name"] = uploaded_filename or "group_photo"
+            bot_status["locked_group_photo_name"] = uploaded_filename or "group_photo.jpg"
+            log_message(f"🖼️ Poză grup încărcată: '{bot_status['locked_group_photo_name']}' -> {saved_photo_path}")
 
         sessions_raw = request.form.get("sessions", "")
         groups_raw = request.form.get("groups", "")
