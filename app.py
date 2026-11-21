@@ -7,7 +7,13 @@ from instagrapi import Client
 
 app = Flask(__name__)
 
-bot_status = {"running": False, "delay": 50}
+bot_status = {
+    "running": False,
+    "delay": 50,
+    "name_lock_running": False,
+    "name_lock_delay": 10,
+    "locked_group_name": "",
+}
 
 BG_IMAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "background.jpg")
 BG_IMAGE_DATA_URI = ""
@@ -35,6 +41,121 @@ def parse_proxy(proxy_raw):
     return proxy_raw
 
 
+def create_authed_client(session_id, proxy_raw, bot_name):
+    client = Client()
+
+    proxy_url = parse_proxy(proxy_raw)
+    if proxy_url:
+        try:
+            client.set_proxy(proxy_url)
+            log_message(f"[{bot_name}] 🌐 Proxy setat cu succes.")
+        except Exception as e:
+            log_message(f"[{bot_name}] ⚠️ Eroare proxy: {str(e)}")
+
+    client.delay_range = [0, 0]
+
+    log_message(f"[{bot_name}] 🔑 Autentificare prin Session ID...")
+    try:
+        client.login_by_sessionid(session_id.strip())
+        log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes prin Session ID!")
+        return client
+    except Exception as e:
+        log_message(f"[{bot_name}] ❌ Eroare sesiune (467/Invalid): {str(e)}")
+        return None
+
+
+def resolve_group_threads(client, group_targets, bot_name):
+    resolved_threads = {}
+    try:
+        log_message(f"[{bot_name}] 🔍 Caut grupurile țintă în inbox...")
+        threads = client.direct_threads(amount=40)
+        for target in group_targets:
+            target_clean = target.strip()
+            if not target_clean:
+                continue
+            found = False
+            for thread in threads:
+                thread_name = getattr(thread, "thread_title", None) or getattr(thread, "title", None) or ""
+                if target_clean.lower() in thread_name.lower() or target_clean == str(thread.id):
+                    resolved_threads[target_clean] = str(thread.id)
+                    log_message(f"[{bot_name}] 📌 Găsit: '{target_clean}' -> ID {thread.id}")
+                    found = True
+                    break
+            if not found:
+                log_message(f"[{bot_name}] ⚠️ Negăsit în inbox: '{target_clean}'")
+    except Exception as e:
+        log_message(f"[{bot_name}] ⚠️ Eroare la citirea inbox-ului: {str(e)}")
+    return resolved_threads
+
+
+def set_group_title(client, thread_id, desired_name):
+    tid = str(thread_id)
+    if hasattr(client, "direct_thread_update_title"):
+        return client.direct_thread_update_title(tid, desired_name)
+    if hasattr(client, "direct_update_title"):
+        return client.direct_update_title(tid, desired_name)
+    return client.private_request(
+        f"direct_v2/threads/{tid}/update_title/",
+        data={"title": desired_name},
+    )
+
+
+def group_name_worker(client, thread_id, target_name, bot_name):
+    """Păstrează numele grupului setat de utilizator la intervalul ales (1 - 120s)"""
+    tid = str(thread_id)
+    while bot_status["name_lock_running"]:
+        try:
+            desired_name = (bot_status.get("locked_group_name") or "").strip()
+            if desired_name:
+                current_title = ""
+                try:
+                    thread_obj = client.direct_thread(tid, amount=1)
+                    current_title = (
+                        getattr(thread_obj, "thread_title", None)
+                        or getattr(thread_obj, "title", None)
+                        or ""
+                    )
+                except Exception:
+                    current_title = ""
+
+                if current_title != desired_name:
+                    set_group_title(client, tid, desired_name)
+                    log_message(f"[{bot_name}] 🔒 Nume grup setat/restaurat la '{desired_name}' pe '{target_name}'")
+
+            current_delay = max(1, min(120, int(bot_status.get("name_lock_delay", 10))))
+            for _ in range(current_delay * 10):
+                if not bot_status["name_lock_running"]:
+                    break
+                time.sleep(0.1)
+        except Exception as e:
+            log_message(f"[{bot_name}] ⚠️ Eroare la schimbarea numelui pe '{target_name}': {str(e)}")
+            time.sleep(5)
+
+
+def run_group_name_protector(session_id, group_targets, bot_name, proxy_raw):
+    client = create_authed_client(session_id, proxy_raw, bot_name)
+    if not client:
+        bot_status["name_lock_running"] = False
+        return
+
+    resolved_threads = resolve_group_threads(client, group_targets, bot_name)
+    if not resolved_threads:
+        log_message(f"[{bot_name}] ❌ Niciun grup valid găsit pentru protecția numelui.")
+        bot_status["name_lock_running"] = False
+        return
+
+    for target_name, thread_id in resolved_threads.items():
+        t = threading.Thread(
+            target=group_name_worker,
+            args=(client, thread_id, target_name, bot_name),
+        )
+        t.daemon = True
+        t.start()
+
+    while bot_status["name_lock_running"]:
+        time.sleep(0.5)
+
+
 def spam_worker(client, thread_id, target_name, messages_list, bot_name, delay_seconds):
     """Worker optimizat pentru grupuri cu pauză configurabilă (1 - 120s)"""
     msg_idx = 0
@@ -58,53 +179,16 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name, delay_s
 
 
 def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw, delay_seconds):
-    client = Client()
-
-    proxy_url = parse_proxy(proxy_raw)
-    if proxy_url:
-        try:
-            client.set_proxy(proxy_url)
-            log_message(f"[{bot_name}] 🌐 Proxy setat cu succes.")
-        except Exception as e:
-            log_message(f"[{bot_name}] ⚠️ Eroare proxy: {str(e)}")
-
-    client.delay_range = [0, 0]
-
-    log_message(f"[{bot_name}] 🔑 Autentificare prin Session ID...")
-    try:
-        client.login_by_sessionid(session_id.strip())
-        log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes prin Session ID!")
-    except Exception as e:
-        log_message(f"[{bot_name}] ❌ Eroare sesiune (467/Invalid): {str(e)}")
+    client = create_authed_client(session_id, proxy_raw, bot_name)
+    if not client:
         return
 
-    resolved_threads = {}
-    try:
-        log_message(f"[{bot_name}] 🔍 Caut grupurile țintă în inbox...")
-        threads = client.direct_threads(amount=40)
-        for target in group_targets:
-            target_clean = target.strip()
-            if not target_clean:
-                continue
-            found = False
-            for thread in threads:
-                thread_name = getattr(thread, "thread_title", None) or getattr(thread, "title", None) or ""
-                if target_clean.lower() in thread_name.lower() or target_clean == str(thread.id):
-                    resolved_threads[target_clean] = thread.id
-                    log_message(f"[{bot_name}] 📌 Găsit: '{target_clean}' -> ID {thread.id}")
-                    found = True
-                    break
-            if not found:
-                log_message(f"[{bot_name}] ⚠️ Negăsit în inbox: '{target_clean}'")
-    except Exception as e:
-        log_message(f"[{bot_name}] ⚠️ Eroare la citirea inbox-ului: {str(e)}")
-
+    resolved_threads = resolve_group_threads(client, group_targets, bot_name)
     if not resolved_threads:
         log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
         return
 
     log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel pe grupuri (pauză: {delay_seconds}s)...")
-    worker_threads = []
     for target_name, thread_id in resolved_threads.items():
         t = threading.Thread(
             target=spam_worker,
@@ -112,36 +196,46 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         )
         t.daemon = True
         t.start()
-        worker_threads.append(t)
 
     while bot_status["running"]:
         time.sleep(0.5)
+
+
+def clamp_seconds(raw_val, default_val):
+    try:
+        return max(1, min(120, int((raw_val or "").strip())))
+    except ValueError:
+        return default_val
 
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     global bot_status
     delay_val = bot_status.get("delay", 50)
+    name_delay_val = bot_status.get("name_lock_delay", 10)
+    locked_name_val = bot_status.get("locked_group_name", "")
 
     if request.method == "POST":
         action = request.form.get("action")
-        raw_delay = request.form.get("delay_seconds", str(delay_val)).strip()
-        try:
-            delay_val = max(1, min(120, int(raw_delay)))
-        except ValueError:
-            delay_val = 50
+        delay_val = clamp_seconds(request.form.get("delay_seconds"), delay_val)
+        name_delay_val = clamp_seconds(request.form.get("name_lock_delay"), name_delay_val)
+        locked_name_val = (request.form.get("locked_group_name") or "").strip()
+
         bot_status["delay"] = delay_val
+        bot_status["name_lock_delay"] = name_delay_val
+        if locked_name_val:
+            bot_status["locked_group_name"] = locked_name_val
+
+        sessions_raw = request.form.get("sessions", "")
+        groups_raw = request.form.get("groups", "")
+        messages_raw = request.form.get("messages", "")
+        proxy_raw = (request.form.get("proxy") or "").strip()
+
+        sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
+        groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
+        messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
 
         if action == "start" and not bot_status["running"]:
-            sessions_raw = request.form.get("sessions", "")
-            groups_raw = request.form.get("groups", "")
-            messages_raw = request.form.get("messages", "")
-            proxy_raw = request.form.get("proxy", "").strip()
-
-            sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
-            groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
-            messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
-
             if sessions and groups and messages:
                 bot_status["running"] = True
                 log_message(f"🚀 Sistem pornit pe grupuri cu {len(sessions)} conturi (pauză: {delay_val}s).")
@@ -157,12 +251,39 @@ def index():
 
         elif action == "stop":
             bot_status["running"] = False
-            log_message("⏹️ S-a ordonat oprirea sistemului.")
+            log_message("⏹️ S-a ordonat oprirea mesajelor.")
+
+        elif action == "start_name_lock" and not bot_status["name_lock_running"]:
+            target_title = locked_name_val or bot_status.get("locked_group_name", "").strip()
+            if sessions and groups and target_title:
+                bot_status["locked_group_name"] = target_title
+                bot_status["name_lock_running"] = True
+                log_message(
+                    f"🔒 Protecție nume grup pornită: '{target_title}' la fiecare {name_delay_val}s."
+                )
+                for idx, session in enumerate(sessions, start=1):
+                    bot_name = f"NameGuard #{idx}"
+                    t = threading.Thread(
+                        target=run_group_name_protector,
+                        args=(session, groups, bot_name, proxy_raw),
+                    )
+                    t.daemon = True
+                    t.start()
+
+        elif action == "stop_name_lock":
+            bot_status["name_lock_running"] = False
+            log_message("🔓 S-a oprit protecția numelui de grup.")
+
+    any_running = bot_status["running"] or bot_status["name_lock_running"]
 
     return render_template_string(
         HTML_TEMPLATE,
         running=bot_status["running"],
+        name_lock_running=bot_status["name_lock_running"],
+        any_running=any_running,
         delay=delay_val,
+        name_lock_delay=name_delay_val,
+        locked_group_name=bot_status.get("locked_group_name", ""),
         bg_image=BG_IMAGE_DATA_URI,
     )
 
@@ -234,12 +355,12 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🪽</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽Kise Cagulă</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // DELAY {{ delay }}s</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">MSG {{ delay }}s // NAME {{ name_lock_delay }}s</p>
                 </div>
             </div>
-            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
-                <span class="w-2 h-2 rounded-full {% if running %}bg-bloodglow animate-ping{% else %}bg-slate-600{% endif %}"></span>
-                <span>{% if running %}ACTIV{% else %}STANDBY{% endif %}</span>
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if any_running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
+                <span class="w-2 h-2 rounded-full {% if any_running %}bg-bloodglow animate-ping{% else %}bg-slate-600{% endif %}"></span>
+                <span>{% if any_running %}ACTIV{% else %}STANDBY{% endif %}</span>
             </div>
         </div>
 
@@ -262,13 +383,43 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <!-- Nume Grup Dorit + Secunde Nume Grup -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-1">
+                    <div class="md:col-span-2">
+                        <label for="locked_group_name" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Nume Grup Dorit (Păstrat Activ)</label>
+                        <input id="locked_group_name" type="text" name="locked_group_name" value="{{ locked_group_name }}" placeholder="ex: 🪽Kise Cagulă" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-rose-100 placeholder-slate-500 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                    <div>
+                        <label for="name_lock_delay" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde Nume (1 - 120)</label>
+                        <input id="name_lock_delay" type="number" name="name_lock_delay" min="1" max="120" value="{{ name_lock_delay }}" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                </div>
+
+                <div>
+                    <input id="name_delay_slider" type="range" min="1" max="120" value="{{ name_lock_delay }}" class="w-full accent-red-600 cursor-pointer">
+                </div>
+
+                <!-- Buton separat pentru schimbarea / păstrarea numelui grupului -->
+                <div>
+                    {% if name_lock_running %}
+                        <button type="submit" name="action" value="stop_name_lock" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-900/90 to-rose-800/90 hover:from-red-800 hover:to-rose-700 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-950/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-500/50">
+                            <span>🔓 OPREȘTE NUMELE GRUPULUI</span>
+                        </button>
+                    {% else %}
+                        <button type="submit" name="action" value="start_name_lock" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-800 via-red-700 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-blood/30 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-400/50">
+                            <span>🔒 SETEAZĂ & PĂSTREAZĂ NUMELE GRUPULUI</span>
+                        </button>
+                    {% endif %}
+                </div>
+
+                <!-- Proxy HTTP + Secunde Mesaje -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-2 border-t border-rose-950/60">
                     <div class="md:col-span-2">
                         <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Proxy HTTP</label>
                         <input type="text" name="proxy" value="38.154.185.97:6370:fvuubeod:0xk9re2xi909" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
                     </div>
                     <div>
-                        <label for="delay_seconds" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde (1 - 120)</label>
+                        <label for="delay_seconds" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde Msg (1 - 120)</label>
                         <input id="delay_seconds" type="number" name="delay_seconds" min="1" max="120" value="{{ delay }}" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
                     </div>
                 </div>
@@ -277,14 +428,14 @@ HTML_TEMPLATE = """
                     <input id="delay_slider" type="range" min="1" max="120" value="{{ delay }}" class="w-full accent-red-600 cursor-pointer">
                 </div>
 
-                <div class="pt-3">
+                <div class="pt-2">
                     {% if running %}
                         <button type="submit" name="action" value="stop" class="w-full py-4 px-4 bg-gradient-to-r from-red-800 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-900/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-500/50">
-                            <span>⏹ OPREȘTE SISTEMUL</span>
+                            <span>⏹ OPREȘTE MESAJELE</span>
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE SISTEMUL</span>
+                            <span>🔥 PORNEȘTE MESAJELE</span>
                         </button>
                     {% endif %}
                 </div>
@@ -297,21 +448,25 @@ HTML_TEMPLATE = """
     </footer>
 
     <script>
-        const delayInput = document.getElementById('delay_seconds');
-        const delaySlider = document.getElementById('delay_slider');
-        if (delayInput && delaySlider) {
-            delaySlider.addEventListener('input', () => {
-                delayInput.value = delaySlider.value;
+        function syncPair(inputId, sliderId, fallbackVal) {
+            const inp = document.getElementById(inputId);
+            const sld = document.getElementById(sliderId);
+            if (!inp || !sld) return;
+            sld.addEventListener('input', () => {
+                inp.value = sld.value;
             });
-            delayInput.addEventListener('input', () => {
-                let val = parseInt(delayInput.value || '50', 10);
+            inp.addEventListener('input', () => {
+                let val = parseInt(inp.value || String(fallbackVal), 10);
                 if (val < 1) val = 1;
                 if (val > 120) val = 120;
-                delaySlider.value = val;
+                sld.value = val;
             });
         }
 
-        {% if running %}
+        syncPair('delay_seconds', 'delay_slider', 50);
+        syncPair('name_lock_delay', 'name_delay_slider', 10);
+
+        {% if any_running %}
         setTimeout(() => {
             location.reload();
         }, 3000);
