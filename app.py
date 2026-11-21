@@ -11,7 +11,6 @@ app = Flask(__name__)
 bot_status = {
     "running": False,
     "delay": 50,
-    "group_meta_running": False,
     "group_meta_delay": 5,
     "locked_group_name": "",
     "locked_group_photo_path": "",
@@ -123,8 +122,7 @@ def set_group_photo(client, thread_id, photo_path):
 def group_meta_worker(client, thread_id, target_name, bot_name):
     """Verifică și restaurează automat numele și poza grupului la intervalul setat (implicit 5s, 1 - 120s)"""
     tid = str(thread_id)
-    first_pass = True
-    while bot_status["group_meta_running"]:
+    while bot_status["running"]:
         try:
             desired_name = (bot_status.get("locked_group_name") or "").strip()
             photo_path = (bot_status.get("locked_group_photo_path") or "").strip()
@@ -144,47 +142,18 @@ def group_meta_worker(client, thread_id, target_name, bot_name):
                 set_group_title(client, tid, desired_name)
                 log_message(f"[{bot_name}] 🔒 Nume grup restaurat la '{desired_name}' pe '{target_name}'")
 
-            if photo_path and os.path.exists(photo_path) and not first_pass:
+            if photo_path and os.path.exists(photo_path):
                 set_group_photo(client, tid, photo_path)
                 log_message(f"[{bot_name}] 🖼️ Poză grup restaurată pe '{target_name}'")
-            elif photo_path and os.path.exists(photo_path) and first_pass:
-                set_group_photo(client, tid, photo_path)
-                log_message(f"[{bot_name}] 🖼️ Poză grup aplicată inițial pe '{target_name}'")
-
-            first_pass = False
 
             current_delay = max(1, min(120, int(bot_status.get("group_meta_delay", 5))))
             for _ in range(current_delay * 10):
-                if not bot_status["group_meta_running"]:
+                if not bot_status["running"]:
                     break
                 time.sleep(0.1)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare la actualizarea grupului '{target_name}': {str(e)}")
             time.sleep(5)
-
-
-def run_group_meta_protector(session_id, group_targets, bot_name, proxy_raw):
-    client = create_authed_client(session_id, proxy_raw, bot_name)
-    if not client:
-        bot_status["group_meta_running"] = False
-        return
-
-    resolved_threads = resolve_group_threads(client, group_targets, bot_name)
-    if not resolved_threads:
-        log_message(f"[{bot_name}] ❌ Niciun grup valid găsit pentru protecția grupului.")
-        bot_status["group_meta_running"] = False
-        return
-
-    for target_name, thread_id in resolved_threads.items():
-        t = threading.Thread(
-            target=group_meta_worker,
-            args=(client, thread_id, target_name, bot_name),
-        )
-        t.daemon = True
-        t.start()
-
-    while bot_status["group_meta_running"]:
-        time.sleep(0.5)
 
 
 def spam_worker(client, thread_id, target_name, messages_list, bot_name, delay_seconds):
@@ -209,7 +178,8 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name, delay_s
             time.sleep(5)
 
 
-def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw, delay_seconds):
+def run_instagram_suite(session_id, group_targets, messages_list, bot_name, proxy_raw, delay_seconds):
+    """Pornește simultan worker-ele de mesaje și protecția de nume/poză grup pentru un cont"""
     client = create_authed_client(session_id, proxy_raw, bot_name)
     if not client:
         return
@@ -219,14 +189,39 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
         return
 
-    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel pe grupuri (pauză: {delay_seconds}s)...")
-    for target_name, thread_id in resolved_threads.items():
-        t = threading.Thread(
-            target=spam_worker,
-            args=(client, thread_id, target_name, messages_list, bot_name, delay_seconds),
+    has_messages = bool(messages_list)
+    has_group_meta = bool(
+        (bot_status.get("locked_group_name") or "").strip()
+        or (
+            bot_status.get("locked_group_photo_path")
+            and os.path.exists(bot_status.get("locked_group_photo_path"))
         )
-        t.daemon = True
-        t.start()
+    )
+
+    if not has_messages and not has_group_meta:
+        log_message(f"[{bot_name}] ⚠️ Nu ai setat mesaje, nume de grup sau poză de grup.")
+        return
+
+    for target_name, thread_id in resolved_threads.items():
+        if has_messages:
+            t_msg = threading.Thread(
+                target=spam_worker,
+                args=(client, thread_id, target_name, messages_list, bot_name, delay_seconds),
+            )
+            t_msg.daemon = True
+            t_msg.start()
+
+        if has_group_meta:
+            t_meta = threading.Thread(
+                target=group_meta_worker,
+                args=(client, thread_id, target_name, bot_name),
+            )
+            t_meta.daemon = True
+            t_meta.start()
+
+    log_message(
+        f"[{bot_name}] 🔥 Activ (Msg: {has_messages}, {delay_seconds}s | Grup Meta: {has_group_meta}, {bot_status.get('group_meta_delay', 5)}s)."
+    )
 
     while bot_status["running"]:
         time.sleep(0.5)
@@ -283,15 +278,22 @@ def index():
         groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
         messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
 
+        has_photo = bool(
+            bot_status.get("locked_group_photo_path")
+            and os.path.exists(bot_status.get("locked_group_photo_path"))
+        )
+
         if action == "start" and not bot_status["running"]:
-            if sessions and groups and messages:
+            if sessions and groups and (messages or locked_name_val or has_photo):
                 bot_status["running"] = True
-                log_message(f"🚀 Sistem pornit pe grupuri cu {len(sessions)} conturi (pauză: {delay_val}s).")
+                log_message(
+                    f"🚀 Sistem complet pornit pe {len(sessions)} conturi (Msg: {delay_val}s | Grup: {meta_delay_val}s)."
+                )
 
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
                     t = threading.Thread(
-                        target=run_instagram_bot,
+                        target=run_instagram_suite,
                         args=(session, groups, messages, bot_name, proxy_raw, delay_val),
                     )
                     t.daemon = True
@@ -299,41 +301,11 @@ def index():
 
         elif action == "stop":
             bot_status["running"] = False
-            log_message("⏹️ S-a ordonat oprirea mesajelor.")
-
-        elif action == "start_group_meta" and not bot_status["group_meta_running"]:
-            target_title = locked_name_val or bot_status.get("locked_group_name", "").strip()
-            has_photo = bool(
-                bot_status.get("locked_group_photo_path")
-                and os.path.exists(bot_status.get("locked_group_photo_path"))
-            )
-            if sessions and groups and (target_title or has_photo):
-                if target_title:
-                    bot_status["locked_group_name"] = target_title
-                bot_status["group_meta_running"] = True
-                log_message(
-                    f"🔒 Protecție nume/poză grup pornită la fiecare {meta_delay_val}s."
-                )
-                for idx, session in enumerate(sessions, start=1):
-                    bot_name = f"GroupGuard #{idx}"
-                    t = threading.Thread(
-                        target=run_group_meta_protector,
-                        args=(session, groups, bot_name, proxy_raw),
-                    )
-                    t.daemon = True
-                    t.start()
-
-        elif action == "stop_group_meta":
-            bot_status["group_meta_running"] = False
-            log_message("🔓 S-a oprit protecția numelui și pozei de grup.")
-
-    any_running = bot_status["running"] or bot_status["group_meta_running"]
+            log_message("⏹️ S-a ordonat oprirea completă a sistemului.")
 
     return render_template_string(
         HTML_TEMPLATE,
         running=bot_status["running"],
-        group_meta_running=bot_status["group_meta_running"],
-        any_running=any_running,
         delay=delay_val,
         group_meta_delay=meta_delay_val,
         locked_group_name=bot_status.get("locked_group_name", ""),
@@ -412,9 +384,9 @@ HTML_TEMPLATE = """
                     <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">MSG {{ delay }}s // GROUP {{ group_meta_delay }}s</p>
                 </div>
             </div>
-            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if any_running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
-                <span class="w-2 h-2 rounded-full {% if any_running %}bg-bloodglow animate-ping{% else %}bg-slate-600{% endif %}"></span>
-                <span>{% if any_running %}ACTIV{% else %}STANDBY{% endif %}</span>
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
+                <span class="w-2 h-2 rounded-full {% if running %}bg-bloodglow animate-ping{% else %}bg-slate-600{% endif %}"></span>
+                <span>{% if running %}ACTIV{% else %}STANDBY{% endif %}</span>
             </div>
         </div>
 
@@ -437,7 +409,7 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Nume Grup + Poză Grup + Secunde Comune (implicit 5s, 1 - 120s) -->
+                <!-- Nume Grup + Poză Grup + Secunde Grup (implicit 5s, 1 - 120s) -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-1">
                     <div>
                         <label for="locked_group_name" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Nume Grup Dorit</label>
@@ -460,19 +432,6 @@ HTML_TEMPLATE = """
                     <input id="group_meta_slider" type="range" min="1" max="120" value="{{ group_meta_delay }}" class="w-full accent-red-600 cursor-pointer">
                 </div>
 
-                <!-- Buton comun pentru nume + poză grup -->
-                <div>
-                    {% if group_meta_running %}
-                        <button type="submit" name="action" value="stop_group_meta" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-900/90 to-rose-800/90 hover:from-red-800 hover:to-rose-700 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-950/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-500/50">
-                            <span>🔓 OPREȘTE NUME + POZĂ GRUP</span>
-                        </button>
-                    {% else %}
-                        <button type="submit" name="action" value="start_group_meta" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-800 via-red-700 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-blood/30 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-400/50">
-                            <span>🔒 SETEAZĂ & PĂSTREAZĂ NUME + POZĂ GRUP</span>
-                        </button>
-                    {% endif %}
-                </div>
-
                 <!-- Proxy HTTP + Secunde Mesaje -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-2 border-t border-rose-950/60">
                     <div class="md:col-span-2">
@@ -489,14 +448,15 @@ HTML_TEMPLATE = """
                     <input id="delay_slider" type="range" min="1" max="120" value="{{ delay }}" class="w-full accent-red-600 cursor-pointer">
                 </div>
 
-                <div class="pt-2">
+                <!-- Un singur buton pentru pornirea/oprirea tuturor funcțiilor -->
+                <div class="pt-3">
                     {% if running %}
                         <button type="submit" name="action" value="stop" class="w-full py-4 px-4 bg-gradient-to-r from-red-800 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-900/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-500/50">
-                            <span>⏹ OPREȘTE MESAJELE</span>
+                            <span>⏹ OPREȘTE SISTEMUL</span>
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE MESAJELE</span>
+                            <span>🔥 PORNEȘTE SISTEMUL</span>
                         </button>
                     {% endif %}
                 </div>
@@ -527,7 +487,7 @@ HTML_TEMPLATE = """
         syncPair('delay_seconds', 'delay_slider', 50);
         syncPair('group_meta_delay', 'group_meta_slider', 5);
 
-        {% if any_running %}
+        {% if running %}
         setTimeout(() => {
             location.reload();
         }, 3000);
