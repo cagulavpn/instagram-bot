@@ -1,16 +1,26 @@
 import os
 import time
+import base64
 import threading
 from flask import Flask, render_template_string, request
 from instagrapi import Client
 
 app = Flask(__name__)
 
-bot_status = {"running": False}
+bot_status = {"running": False, "delay": 50}
+
+BG_IMAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "background.jpg")
+BG_IMAGE_DATA_URI = ""
+if os.path.exists(BG_IMAGE_PATH):
+    with open(BG_IMAGE_PATH, "rb") as img_file:
+        encoded = base64.b64encode(img_file.read()).decode("utf-8")
+        BG_IMAGE_DATA_URI = f"data:image/jpeg;base64,{encoded}"
+
 
 def log_message(message):
     timestamp = time.strftime("[%H:%M:%S]")
     print(f"{timestamp} {message}")
+
 
 def parse_proxy(proxy_raw):
     if not proxy_raw:
@@ -24,8 +34,9 @@ def parse_proxy(proxy_raw):
         return f"http://{parts[0]}:{parts[1]}"
     return proxy_raw
 
-def spam_worker(client, thread_id, target_name, messages_list, bot_name):
-    """Worker optimizat pentru grupuri cu pauză de 60 de secunde"""
+
+def spam_worker(client, thread_id, target_name, messages_list, bot_name, delay_seconds):
+    """Worker optimizat pentru grupuri cu pauză configurabilă (1 - 120s)"""
     msg_idx = 0
     sent_count = 0
     while bot_status["running"]:
@@ -35,14 +46,18 @@ def spam_worker(client, thread_id, target_name, messages_list, bot_name):
             client.direct_send(text=msg, thread_ids=[str(thread_id)])
             sent_count += 1
             log_message(f"[{bot_name}] 🚀 Trimis pe grupul '{target_name}' (Total: {sent_count})")
-            
-            # Pauză de siguranță de 60 de secunde
-            time.sleep(60.0)
+
+            current_delay = max(1, min(120, int(bot_status.get("delay", delay_seconds))))
+            for _ in range(current_delay * 10):
+                if not bot_status["running"]:
+                    break
+                time.sleep(0.1)
         except Exception as e:
             log_message(f"[{bot_name}] ⚠️ Eroare pe grupul '{target_name}': {str(e)}")
-            time.sleep(10)
+            time.sleep(5)
 
-def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw):
+
+def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_raw, delay_seconds):
     client = Client()
 
     proxy_url = parse_proxy(proxy_raw)
@@ -73,7 +88,7 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
                 continue
             found = False
             for thread in threads:
-                thread_name = getattr(thread, 'thread_title', None) or getattr(thread, 'title', None) or ""
+                thread_name = getattr(thread, "thread_title", None) or getattr(thread, "title", None) or ""
                 if target_clean.lower() in thread_name.lower() or target_clean == str(thread.id):
                     resolved_threads[target_clean] = thread.id
                     log_message(f"[{bot_name}] 📌 Găsit: '{target_clean}' -> ID {thread.id}")
@@ -88,10 +103,13 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
         log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
         return
 
-    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel pe grupuri...")
+    log_message(f"[{bot_name}] 🔥 Pornesc fluxul paralel pe grupuri (pauză: {delay_seconds}s)...")
     worker_threads = []
     for target_name, thread_id in resolved_threads.items():
-        t = threading.Thread(target=spam_worker, args=(client, thread_id, target_name, messages_list, bot_name))
+        t = threading.Thread(
+            target=spam_worker,
+            args=(client, thread_id, target_name, messages_list, bot_name, delay_seconds),
+        )
         t.daemon = True
         t.start()
         worker_threads.append(t)
@@ -99,37 +117,55 @@ def run_instagram_bot(session_id, group_targets, messages_list, bot_name, proxy_
     while bot_status["running"]:
         time.sleep(0.5)
 
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     global bot_status
+    delay_val = bot_status.get("delay", 50)
+
     if request.method == "POST":
         action = request.form.get("action")
-        
+        raw_delay = request.form.get("delay_seconds", str(delay_val)).strip()
+        try:
+            delay_val = max(1, min(120, int(raw_delay)))
+        except ValueError:
+            delay_val = 50
+        bot_status["delay"] = delay_val
+
         if action == "start" and not bot_status["running"]:
             sessions_raw = request.form.get("sessions", "")
             groups_raw = request.form.get("groups", "")
             messages_raw = request.form.get("messages", "")
             proxy_raw = request.form.get("proxy", "").strip()
-            
+
             sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
             groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
             messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
-            
+
             if sessions and groups and messages:
                 bot_status["running"] = True
-                log_message(f"🚀 Sistem pornit pe grupuri cu {len(sessions)} conturi.")
-                
+                log_message(f"🚀 Sistem pornit pe grupuri cu {len(sessions)} conturi (pauză: {delay_val}s).")
+
                 for idx, session in enumerate(sessions, start=1):
                     bot_name = f"Agent #{idx}"
-                    t = threading.Thread(target=run_instagram_bot, args=(session, groups, messages, bot_name, proxy_raw))
+                    t = threading.Thread(
+                        target=run_instagram_bot,
+                        args=(session, groups, messages, bot_name, proxy_raw, delay_val),
+                    )
                     t.daemon = True
                     t.start()
-                    
+
         elif action == "stop":
             bot_status["running"] = False
             log_message("⏹️ S-a ordonat oprirea sistemului.")
 
-    return render_template_string(HTML_TEMPLATE, running=bot_status["running"])
+    return render_template_string(
+        HTML_TEMPLATE,
+        running=bot_status["running"],
+        delay=delay_val,
+        bg_image=BG_IMAGE_DATA_URI,
+    )
+
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -137,7 +173,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🪽Kise Cagulă - Turbo Panel</title>
+    <title>🪽Kise Cagulă - Control Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -157,29 +193,33 @@ HTML_TEMPLATE = """
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
-        
-        body { 
-            font-family: 'Plus Jakarta Sans', sans-serif; 
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
             background-color: #050203;
-            background-image: 
-                linear-gradient(to bottom, rgba(5, 2, 3, 0.40), rgba(5, 2, 3, 0.70)),
-                url('https://wallpapercave.com/wp/wp4905335.jpg');
+            background-image:
+                linear-gradient(to bottom, rgba(5, 2, 3, 0.42), rgba(5, 2, 3, 0.72)),
+                {% if bg_image %}
+                url('{{ bg_image }}');
+                {% else %}
+                radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.35) 0%, rgba(5, 2, 3, 0.92) 75%);
+                {% endif %}
             background-size: cover;
             background-position: center center;
             background-attachment: fixed;
         }
-        
+
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         .font-title { font-family: 'Cinzel', serif; }
-        
+
         .glass-smoke {
-            background: rgba(15, 7, 9, 0.55);
+            background: rgba(15, 7, 9, 0.56);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(220, 38, 38, 0.35);
             box-shadow: 0 0 40px rgba(220, 38, 38, 0.2), inset 0 0 15px rgba(220, 38, 38, 0.05);
         }
-        
+
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #050203; }
         ::-webkit-scrollbar-thumb { background: #3f111a; border-radius: 4px; }
@@ -194,7 +234,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🪽</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽Kise Cagulă</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // 60s SPEED</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">GENERATION OF MIRACLES // DELAY {{ delay }}s</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -222,9 +262,19 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Proxy HTTP</label>
+                        <input type="text" name="proxy" value="38.154.185.97:6370:fvuubeod:0xk9re2xi909" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                    <div>
+                        <label for="delay_seconds" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde (1 - 120)</label>
+                        <input id="delay_seconds" type="number" name="delay_seconds" min="1" max="120" value="{{ delay }}" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                </div>
+
                 <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Proxy HTTP</label>
-                    <input type="text" name="proxy" value="38.154.185.97:6370:fvuubeod:0xk9re2xi909" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    <input id="delay_slider" type="range" min="1" max="120" value="{{ delay }}" class="w-full accent-red-600 cursor-pointer">
                 </div>
 
                 <div class="pt-3">
@@ -234,7 +284,7 @@ HTML_TEMPLATE = """
                         </button>
                     {% else %}
                         <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
-                            <span>🔥 PORNEȘTE LA 60 SECUNDE</span>
+                            <span>🔥 PORNEȘTE SISTEMUL</span>
                         </button>
                     {% endif %}
                 </div>
@@ -247,6 +297,20 @@ HTML_TEMPLATE = """
     </footer>
 
     <script>
+        const delayInput = document.getElementById('delay_seconds');
+        const delaySlider = document.getElementById('delay_slider');
+        if (delayInput && delaySlider) {
+            delaySlider.addEventListener('input', () => {
+                delayInput.value = delaySlider.value;
+            });
+            delayInput.addEventListener('input', () => {
+                let val = parseInt(delayInput.value || '50', 10);
+                if (val < 1) val = 1;
+                if (val > 120) val = 120;
+                delaySlider.value = val;
+            });
+        }
+
         {% if running %}
         setTimeout(() => {
             location.reload();
