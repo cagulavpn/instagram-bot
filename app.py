@@ -1,6 +1,7 @@
 import os
 import time
 import base64
+import tempfile
 import threading
 from flask import Flask, render_template_string, request
 from instagrapi import Client
@@ -10,9 +11,11 @@ app = Flask(__name__)
 bot_status = {
     "running": False,
     "delay": 50,
-    "name_lock_running": False,
-    "name_lock_delay": 10,
+    "group_meta_running": False,
+    "group_meta_delay": 5,
     "locked_group_name": "",
+    "locked_group_photo_path": "",
+    "locked_group_photo_name": "",
 }
 
 BG_IMAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "background.jpg")
@@ -100,59 +103,87 @@ def set_group_title(client, thread_id, desired_name):
     )
 
 
-def group_name_worker(client, thread_id, target_name, bot_name):
-    """Păstrează numele grupului setat de utilizator la intervalul ales (1 - 120s)"""
+def set_group_photo(client, thread_id, photo_path):
     tid = str(thread_id)
-    while bot_status["name_lock_running"]:
+    if not photo_path or not os.path.exists(photo_path):
+        return False
+    if hasattr(client, "direct_thread_update_image"):
+        return client.direct_thread_update_image(tid, photo_path)
+    if hasattr(client, "direct_update_photo"):
+        return client.direct_update_photo(tid, photo_path)
+    with open(photo_path, "rb") as f:
+        img_bytes = f.read()
+    client.private_request(
+        f"direct_v2/threads/{tid}/update_image/",
+        files={"image": (os.path.basename(photo_path), img_bytes, "image/jpeg")},
+    )
+    return True
+
+
+def group_meta_worker(client, thread_id, target_name, bot_name):
+    """Verifică și restaurează automat numele și poza grupului la intervalul setat (implicit 5s, 1 - 120s)"""
+    tid = str(thread_id)
+    first_pass = True
+    while bot_status["group_meta_running"]:
         try:
             desired_name = (bot_status.get("locked_group_name") or "").strip()
-            if desired_name:
+            photo_path = (bot_status.get("locked_group_photo_path") or "").strip()
+
+            current_title = ""
+            try:
+                thread_obj = client.direct_thread(tid, amount=1)
+                current_title = (
+                    getattr(thread_obj, "thread_title", None)
+                    or getattr(thread_obj, "title", None)
+                    or ""
+                )
+            except Exception:
                 current_title = ""
-                try:
-                    thread_obj = client.direct_thread(tid, amount=1)
-                    current_title = (
-                        getattr(thread_obj, "thread_title", None)
-                        or getattr(thread_obj, "title", None)
-                        or ""
-                    )
-                except Exception:
-                    current_title = ""
 
-                if current_title != desired_name:
-                    set_group_title(client, tid, desired_name)
-                    log_message(f"[{bot_name}] 🔒 Nume grup setat/restaurat la '{desired_name}' pe '{target_name}'")
+            if desired_name and current_title != desired_name:
+                set_group_title(client, tid, desired_name)
+                log_message(f"[{bot_name}] 🔒 Nume grup restaurat la '{desired_name}' pe '{target_name}'")
 
-            current_delay = max(1, min(120, int(bot_status.get("name_lock_delay", 10))))
+            if photo_path and os.path.exists(photo_path) and not first_pass:
+                set_group_photo(client, tid, photo_path)
+                log_message(f"[{bot_name}] 🖼️ Poză grup restaurată pe '{target_name}'")
+            elif photo_path and os.path.exists(photo_path) and first_pass:
+                set_group_photo(client, tid, photo_path)
+                log_message(f"[{bot_name}] 🖼️ Poză grup aplicată inițial pe '{target_name}'")
+
+            first_pass = False
+
+            current_delay = max(1, min(120, int(bot_status.get("group_meta_delay", 5))))
             for _ in range(current_delay * 10):
-                if not bot_status["name_lock_running"]:
+                if not bot_status["group_meta_running"]:
                     break
                 time.sleep(0.1)
         except Exception as e:
-            log_message(f"[{bot_name}] ⚠️ Eroare la schimbarea numelui pe '{target_name}': {str(e)}")
+            log_message(f"[{bot_name}] ⚠️ Eroare la actualizarea grupului '{target_name}': {str(e)}")
             time.sleep(5)
 
 
-def run_group_name_protector(session_id, group_targets, bot_name, proxy_raw):
+def run_group_meta_protector(session_id, group_targets, bot_name, proxy_raw):
     client = create_authed_client(session_id, proxy_raw, bot_name)
     if not client:
-        bot_status["name_lock_running"] = False
+        bot_status["group_meta_running"] = False
         return
 
     resolved_threads = resolve_group_threads(client, group_targets, bot_name)
     if not resolved_threads:
-        log_message(f"[{bot_name}] ❌ Niciun grup valid găsit pentru protecția numelui.")
-        bot_status["name_lock_running"] = False
+        log_message(f"[{bot_name}] ❌ Niciun grup valid găsit pentru protecția grupului.")
+        bot_status["group_meta_running"] = False
         return
 
     for target_name, thread_id in resolved_threads.items():
         t = threading.Thread(
-            target=group_name_worker,
+            target=group_meta_worker,
             args=(client, thread_id, target_name, bot_name),
         )
         t.daemon = True
         t.start()
 
-    while bot_status["name_lock_running"]:
+    while bot_status["group_meta_running"]:
         time.sleep(0.5)
 
 
@@ -208,23 +239,40 @@ def clamp_seconds(raw_val, default_val):
         return default_val
 
 
+def save_uploaded_group_photo(file_storage):
+    if not file_storage or not file_storage.filename:
+        return None, None
+    ext = os.path.splitext(file_storage.filename)[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        ext = ".jpg"
+    tmp_path = os.path.join(tempfile.gettempdir(), f"kise_group_photo{ext}")
+    file_storage.save(tmp_path)
+    return tmp_path, file_storage.filename
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     global bot_status
     delay_val = bot_status.get("delay", 50)
-    name_delay_val = bot_status.get("name_lock_delay", 10)
+    meta_delay_val = bot_status.get("group_meta_delay", 5)
     locked_name_val = bot_status.get("locked_group_name", "")
 
     if request.method == "POST":
         action = request.form.get("action")
         delay_val = clamp_seconds(request.form.get("delay_seconds"), delay_val)
-        name_delay_val = clamp_seconds(request.form.get("name_lock_delay"), name_delay_val)
+        meta_delay_val = clamp_seconds(request.form.get("group_meta_delay"), meta_delay_val)
         locked_name_val = (request.form.get("locked_group_name") or "").strip()
 
         bot_status["delay"] = delay_val
-        bot_status["name_lock_delay"] = name_delay_val
+        bot_status["group_meta_delay"] = meta_delay_val
         if locked_name_val:
             bot_status["locked_group_name"] = locked_name_val
+
+        uploaded_photo = request.files.get("group_photo")
+        saved_photo_path, uploaded_filename = save_uploaded_group_photo(uploaded_photo)
+        if saved_photo_path:
+            bot_status["locked_group_photo_path"] = saved_photo_path
+            bot_status["locked_group_photo_name"] = uploaded_filename or "group_photo"
 
         sessions_raw = request.form.get("sessions", "")
         groups_raw = request.form.get("groups", "")
@@ -253,37 +301,43 @@ def index():
             bot_status["running"] = False
             log_message("⏹️ S-a ordonat oprirea mesajelor.")
 
-        elif action == "start_name_lock" and not bot_status["name_lock_running"]:
+        elif action == "start_group_meta" and not bot_status["group_meta_running"]:
             target_title = locked_name_val or bot_status.get("locked_group_name", "").strip()
-            if sessions and groups and target_title:
-                bot_status["locked_group_name"] = target_title
-                bot_status["name_lock_running"] = True
+            has_photo = bool(
+                bot_status.get("locked_group_photo_path")
+                and os.path.exists(bot_status.get("locked_group_photo_path"))
+            )
+            if sessions and groups and (target_title or has_photo):
+                if target_title:
+                    bot_status["locked_group_name"] = target_title
+                bot_status["group_meta_running"] = True
                 log_message(
-                    f"🔒 Protecție nume grup pornită: '{target_title}' la fiecare {name_delay_val}s."
+                    f"🔒 Protecție nume/poză grup pornită la fiecare {meta_delay_val}s."
                 )
                 for idx, session in enumerate(sessions, start=1):
-                    bot_name = f"NameGuard #{idx}"
+                    bot_name = f"GroupGuard #{idx}"
                     t = threading.Thread(
-                        target=run_group_name_protector,
+                        target=run_group_meta_protector,
                         args=(session, groups, bot_name, proxy_raw),
                     )
                     t.daemon = True
                     t.start()
 
-        elif action == "stop_name_lock":
-            bot_status["name_lock_running"] = False
-            log_message("🔓 S-a oprit protecția numelui de grup.")
+        elif action == "stop_group_meta":
+            bot_status["group_meta_running"] = False
+            log_message("🔓 S-a oprit protecția numelui și pozei de grup.")
 
-    any_running = bot_status["running"] or bot_status["name_lock_running"]
+    any_running = bot_status["running"] or bot_status["group_meta_running"]
 
     return render_template_string(
         HTML_TEMPLATE,
         running=bot_status["running"],
-        name_lock_running=bot_status["name_lock_running"],
+        group_meta_running=bot_status["group_meta_running"],
         any_running=any_running,
         delay=delay_val,
-        name_lock_delay=name_delay_val,
+        group_meta_delay=meta_delay_val,
         locked_group_name=bot_status.get("locked_group_name", ""),
+        locked_group_photo_name=bot_status.get("locked_group_photo_name", ""),
         bg_image=BG_IMAGE_DATA_URI,
     )
 
@@ -355,7 +409,7 @@ HTML_TEMPLATE = """
                 <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🪽</span>
                 <div>
                     <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽Kise Cagulă</h1>
-                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">MSG {{ delay }}s // NAME {{ name_lock_delay }}s</p>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">MSG {{ delay }}s // GROUP {{ group_meta_delay }}s</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if any_running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
@@ -366,7 +420,7 @@ HTML_TEMPLATE = """
 
         <!-- Main Card -->
         <div class="glass-smoke p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
-            <form method="POST" class="space-y-4">
+            <form method="POST" enctype="multipart/form-data" class="space-y-4">
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Session ID (Cookie)</label>
                     <textarea name="sessions" rows="2" placeholder="introdu sessionid-ul aici..." class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono"></textarea>
@@ -383,31 +437,38 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Nume Grup Dorit + Secunde Nume Grup -->
+                <!-- Nume Grup + Poză Grup + Secunde Comune (implicit 5s, 1 - 120s) -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-1">
-                    <div class="md:col-span-2">
-                        <label for="locked_group_name" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Nume Grup Dorit (Păstrat Activ)</label>
+                    <div>
+                        <label for="locked_group_name" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Nume Grup Dorit</label>
                         <input id="locked_group_name" type="text" name="locked_group_name" value="{{ locked_group_name }}" placeholder="ex: 🪽Kise Cagulă" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-rose-100 placeholder-slate-500 focus:outline-none focus:border-blood transition shadow-inner">
                     </div>
                     <div>
-                        <label for="name_lock_delay" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde Nume (1 - 120)</label>
-                        <input id="name_lock_delay" type="number" name="name_lock_delay" min="1" max="120" value="{{ name_lock_delay }}" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                        <label for="group_photo" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Poză Grup (Fișier)</label>
+                        <input id="group_photo" type="file" name="group_photo" accept="image/*" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-3 py-2.5 text-xs text-rose-200 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border file:border-red-500/40 file:text-xs file:font-semibold file:bg-red-900/50 file:text-rose-100 hover:file:bg-red-800/60 focus:outline-none focus:border-blood transition shadow-inner cursor-pointer">
+                        {% if locked_group_photo_name %}
+                            <p class="text-[11px] text-rose-300/80 font-mono mt-1 truncate">Activă: {{ locked_group_photo_name }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="group_meta_delay" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde Grup (1 - 120)</label>
+                        <input id="group_meta_delay" type="number" name="group_meta_delay" min="1" max="120" value="{{ group_meta_delay }}" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
                     </div>
                 </div>
 
                 <div>
-                    <input id="name_delay_slider" type="range" min="1" max="120" value="{{ name_lock_delay }}" class="w-full accent-red-600 cursor-pointer">
+                    <input id="group_meta_slider" type="range" min="1" max="120" value="{{ group_meta_delay }}" class="w-full accent-red-600 cursor-pointer">
                 </div>
 
-                <!-- Buton separat pentru schimbarea / păstrarea numelui grupului -->
+                <!-- Buton comun pentru nume + poză grup -->
                 <div>
-                    {% if name_lock_running %}
-                        <button type="submit" name="action" value="stop_name_lock" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-900/90 to-rose-800/90 hover:from-red-800 hover:to-rose-700 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-950/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-500/50">
-                            <span>🔓 OPREȘTE NUMELE GRUPULUI</span>
+                    {% if group_meta_running %}
+                        <button type="submit" name="action" value="stop_group_meta" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-900/90 to-rose-800/90 hover:from-red-800 hover:to-rose-700 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-950/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-500/50">
+                            <span>🔓 OPREȘTE NUME + POZĂ GRUP</span>
                         </button>
                     {% else %}
-                        <button type="submit" name="action" value="start_name_lock" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-800 via-red-700 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-blood/30 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-400/50">
-                            <span>🔒 SETEAZĂ & PĂSTREAZĂ NUMELE GRUPULUI</span>
+                        <button type="submit" name="action" value="start_group_meta" class="w-full py-3.5 px-4 bg-gradient-to-r from-red-800 via-red-700 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-blood/30 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-xs sm:text-sm font-title border border-red-400/50">
+                            <span>🔒 SETEAZĂ & PĂSTREAZĂ NUME + POZĂ GRUP</span>
                         </button>
                     {% endif %}
                 </div>
@@ -464,7 +525,7 @@ HTML_TEMPLATE = """
         }
 
         syncPair('delay_seconds', 'delay_slider', 50);
-        syncPair('name_lock_delay', 'name_delay_slider', 10);
+        syncPair('group_meta_delay', 'group_meta_slider', 5);
 
         {% if any_running %}
         setTimeout(() => {
