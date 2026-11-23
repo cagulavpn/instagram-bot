@@ -1,405 +1,532 @@
-import io
 import os
-import threading
 import time
-from flask import Flask, request, jsonify, render_template_string
+import base64
+import tempfile
+import threading
+from flask import Flask, render_template_string, request
 from instagrapi import Client
-from PIL import Image
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 app = Flask(__name__)
 
-UPLOAD_DIR = "/tmp/group_uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-GROUP_PHOTO_PATH = os.path.join(UPLOAD_DIR, "group_avatar.jpg")
-
-state_lock = threading.Lock()
-stop_event = threading.Event()
-
 bot_status = {
     "running": False,
-    "last_error": "",
-    "msg_count": 0,
-    "meta_checks": 0,
-    "last_action": "Oprit",
+    "delay": 50,
+    "group_meta_running": False,
+    "group_meta_delay": 5,
+    "locked_group_name": "",
+    "locked_group_photo_path": "",
+    "locked_group_photo_name": "",
 }
 
-bot_config = {
-    "session_id": "",
-    "proxy": "",
-    "group_target": "",
-    "message_text": "",
-    "msg_delay": 0.1,
-    "group_title": "",
-    "meta_delay": 5.0,
-    "protect_title": True,
-    "protect_photo": False,
-}
-
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="ro">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kise Cagulă — Control Panel</title>
-  <style>
-    body { font-family: Arial, sans-serif; background: #111; color: #f2f2f2; margin: 0; padding: 16px; }
-    .card { max-width: 560px; margin: auto; background: #1b1b1b; border: 1px solid #2e2e2e; border-radius: 10px; padding: 16px; }
-    h2 { margin-top: 0; }
-    label { display: block; font-size: 13px; margin-top: 10px; color: #ccc; }
-    input[type="text"], input[type="password"], input[type="number"], textarea {
-      width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px;
-      background: #101010; color: #fff; border: 1px solid #383838; border-radius: 6px;
-    }
-    .row { display: flex; gap: 10px; }
-    .row > div { flex: 1; }
-    .checks { display: flex; gap: 16px; margin-top: 10px; font-size: 14px; }
-    .btns { display: flex; gap: 10px; margin-top: 16px; }
-    button { flex: 1; padding: 11px; border: none; border-radius: 7px; font-weight: bold; cursor: pointer; }
-    .btn-start { background: #1f9d55; color: #fff; }
-    .btn-stop { background: #c53030; color: #fff; }
-    .status-box { margin-top: 14px; padding: 10px; background: #131313; border-radius: 7px; font-size: 13px; line-height: 1.5; }
-    .badge-on { color: #48bb78; font-weight: bold; }
-    .badge-off { color: #f56565; font-weight: bold; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h2>🪽 Kise Cagulă</h2>
-
-    <form id="botForm" enctype="multipart/form-data">
-      <label>Session ID Instagram</label>
-      <input type="password" name="session_id" required placeholder="sessionid..." />
-
-      <label>Proxy (opțional, ex. ip:port:user:pass sau http://user:pass@ip:port)</label>
-      <input type="text" name="proxy" placeholder="" />
-
-      <label>Nume grup (sau Thread ID)</label>
-      <input type="text" name="group_target" required placeholder="Numele exact al grupului..." />
-
-      <label>Mesaj automat</label>
-      <textarea name="message_text" rows="2" placeholder="Textul trimis în grup..."></textarea>
-
-      <div class="row">
-        <div>
-          <label>Delay mesaje (sec, min 0.1)</label>
-          <input type="text" name="msg_delay" value="0.1" />
-        </div>
-        <div>
-          <label>Delay nume/poză (1–120 sec)</label>
-          <input type="text" name="meta_delay" value="5.0" />
-        </div>
-      </div>
-
-      <label>Nume grup dorit (dacă lași gol, îl păstrează pe cel de sus)</label>
-      <input type="text" name="group_title" placeholder="Numele grupului..." />
-
-      <label>Poză grup (opțional, se convertește automat în JPG 800x800)</label>
-      <input type="file" name="group_photo" accept="image/*" />
-
-      <div class="checks">
-        <label><input type="checkbox" name="protect_title" checked /> Menține nume</label>
-        <label><input type="checkbox" name="protect_photo" /> Menține poză</label>
-      </div>
-
-      <div class="btns">
-        <button type="button" class="btn-start" onclick="startBot()">START</button>
-        <button type="button" class="btn-stop" onclick="stopBot()">STOP</button>
-      </div>
-    </form>
-
-    <div class="status-box" id="statusBox">Se încarcă statusul...</div>
-  </div>
-
-  <script>
-    async function startBot() {
-      const form = document.getElementById("botForm");
-      const data = new FormData(form);
-      const res = await fetch("/start", { method: "POST", body: data });
-      const json = await res.json();
-      if (!res.ok) alert(json.error || "Eroare la pornire");
-      refreshStatus();
-    }
-
-    async function stopBot() {
-      await fetch("/stop", { method: "POST" });
-      refreshStatus();
-    }
-
-    async function refreshStatus() {
-      const res = await fetch("/status");
-      const s = await res.json();
-      const badge = s.running
-        ? '<span class="badge-on">ACTIV</span>'
-        : '<span class="badge-off">OPRIT</span>';
-      document.getElementById("statusBox").innerHTML = `
-        <div>Stare: ${badge}</div>
-        <div>Mesaje trimise: <b>${s.msg_count}</b> | Verificări grup: <b>${s.meta_checks}</b></div>
-        <div>Ultima acțiune: ${s.last_action || "-"}</div>
-        <div>Ultima eroare: ${s.last_error || "Niciuna"}</div>
-      `;
-    }
-
-    refreshStatus();
-    setInterval(refreshStatus, 3000);
-  </script>
-</body>
-</html>
-"""
+BG_IMAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "background.jpg")
+BG_IMAGE_DATA_URI = ""
+if os.path.exists(BG_IMAGE_PATH):
+    with open(BG_IMAGE_PATH, "rb") as img_file:
+        encoded = base64.b64encode(img_file.read()).decode("utf-8")
+        BG_IMAGE_DATA_URI = f"data:image/jpeg;base64,{encoded}"
 
 
-def normalize_proxy(proxy: str) -> str:
-    p = (proxy or "").strip()
-    if not p:
-        return ""
-    if "://" in p:
-        return p
-    parts = p.split(":")
+def log_message(message):
+    timestamp = time.strftime("[%H:%M:%S]")
+    print(f"{timestamp} {message}")
+
+
+def parse_proxy(proxy_raw):
+    if not proxy_raw:
+        return None
+    proxy_raw = proxy_raw.strip()
+    parts = proxy_raw.split(":")
     if len(parts) == 4:
         ip, port, user, pwd = parts
         return f"http://{user}:{pwd}@{ip}:{port}"
-    return f"http://{p}"
+    elif len(parts) == 2:
+        return f"http://{parts[0]}:{parts[1]}"
+    return proxy_raw
 
 
-def parse_float_safe(value, default_val: float, min_val: float, max_val: float) -> float:
-    try:
-        cleaned = str(value or "").replace(",", ".").strip()
-        num = float(cleaned)
-    except ValueError:
-        num = default_val
-    return min(max_val, max(min_val, num))
+def create_authed_client(session_id, proxy_raw, bot_name):
+    client = Client()
 
-
-def build_client(session_id: str, proxy: str) -> Client:
-    cl = Client()
-    formatted_proxy = normalize_proxy(proxy)
-    if formatted_proxy:
-        cl.set_proxy(formatted_proxy)
-    cl.login_by_sessionid(session_id)
-    return cl
-
-
-def resolve_thread_id(cl: Client, group_target: str) -> int:
-    target = (group_target or "").strip()
-    if not target:
-        raise ValueError("Nu ai introdus numele sau ID-ul grupului.")
-    if target.isdigit():
-        return int(target)
-
-    threads = cl.direct_threads(amount=30)
-    target_lower = target.lower()
-
-    for t in threads:
-        title = (getattr(t, "thread_title", None) or getattr(t, "title", None) or "").strip()
-        if title.lower() == target_lower:
-            return int(t.id)
-
-    for t in threads:
-        title = (getattr(t, "thread_title", None) or getattr(t, "title", None) or "").strip()
-        if target_lower in title.lower():
-            return int(t.id)
-
-    raise ValueError(f"Nu am găsit niciun grup cu numele '{target}' în ultimele 30 conversații.")
-
-
-def save_processed_photo(file_storage) -> str:
-    raw_bytes = file_storage.read()
-    with Image.open(io.BytesIO(raw_bytes)) as img:
-        rgb_img = img.convert("RGB")
-        squared = rgb_img.resize((800, 800), Image.Resampling.LANCZOS)
-        squared.save(GROUP_PHOTO_PATH, format="JPEG", quality=85, optimize=True)
-    return GROUP_PHOTO_PATH
-
-
-def set_group_photo_compat(cl: Client, thread_id: int, photo_path: str) -> None:
-    if hasattr(cl, "direct_thread_update_photo"):
-        cl.direct_thread_update_photo(thread_id, photo_path)
-        return
-    if hasattr(cl, "direct_thread_change_photo"):
-        cl.direct_thread_change_photo(thread_id, photo_path)
-        return
-    raise RuntimeError("Metoda de schimbare poză grup nu este disponibilă în această versiune instagrapi.")
-
-
-def set_group_title_compat(cl: Client, thread_id: int, title: str) -> None:
-    if hasattr(cl, "direct_thread_update_title"):
-        cl.direct_thread_update_title(thread_id, title)
-        return
-    if hasattr(cl, "direct_thread_change_title"):
-        cl.direct_thread_change_title(thread_id, title)
-        return
-    raise RuntimeError("Metoda de schimbare nume grup nu este disponibilă în această versiune instagrapi.")
-
-
-def spam_worker(cfg: dict, thread_id: int) -> None:
-    if not cfg["message_text"].strip():
-        return
-    try:
-        cl = build_client(cfg["session_id"], cfg["proxy"])
-    except Exception as exc:
-        with state_lock:
-            bot_status["last_error"] = f"Eroare login mesaje: {exc}"
-        return
-
-    delay = cfg["msg_delay"]
-    text = cfg["message_text"]
-
-    while not stop_event.is_set():
+    proxy_url = parse_proxy(proxy_raw)
+    if proxy_url:
         try:
-            cl.direct_send(text, thread_ids=[thread_id])
-            with state_lock:
-                bot_status["msg_count"] += 1
-                bot_status["last_action"] = f"Mesaj trimis (#{bot_status['msg_count']})"
-                bot_status["last_error"] = ""
-        except Exception as exc:
-            with state_lock:
-                bot_status["last_error"] = f"Eroare mesaj: {exc}"
-        if stop_event.wait(delay):
-            break
+            client.set_proxy(proxy_url)
+            log_message(f"[{bot_name}] 🌐 Proxy setat cu succes.")
+        except Exception as e:
+            log_message(f"[{bot_name}] ⚠️ Eroare proxy: {str(e)}")
 
+    client.delay_range = [0, 0]
 
-def group_meta_worker(cfg: dict, thread_id: int) -> None:
-    if not cfg["protect_title"] and not cfg["protect_photo"]:
-        return
+    log_message(f"[{bot_name}] 🔑 Autentificare prin Session ID...")
     try:
-        cl = build_client(cfg["session_id"], cfg["proxy"])
-    except Exception as exc:
-        with state_lock:
-            bot_status["last_error"] = f"Eroare login grup: {exc}"
-        return
+        client.login_by_sessionid(session_id.strip())
+        log_message(f"[{bot_name}] ✅ Conexiune stabilită cu succes prin Session ID!")
+        return client
+    except Exception as e:
+        log_message(f"[{bot_name}] ❌ Eroare sesiune (467/Invalid): {str(e)}")
+        return None
 
-    delay = cfg["meta_delay"]
-    desired_title = (
-        cfg["group_title"].strip()
-        or (cfg["group_target"].strip() if not cfg["group_target"].strip().isdigit() else "")
+
+def resolve_group_threads(client, group_targets, bot_name):
+    resolved_threads = {}
+    try:
+        log_message(f"[{bot_name}] 🔍 Caut grupurile țintă în inbox...")
+        threads = client.direct_threads(amount=40)
+        for target in group_targets:
+            target_clean = target.strip()
+            if not target_clean:
+                continue
+            found = False
+            for thread in threads:
+                thread_name = getattr(thread, "thread_title", None) or getattr(thread, "title", None) or ""
+                if target_clean.lower() in thread_name.lower() or target_clean == str(thread.id):
+                    resolved_threads[target_clean] = str(thread.id)
+                    log_message(f"[{bot_name}] 📌 Găsit: '{target_clean}' -> ID {thread.id}")
+                    found = True
+                    break
+            if not found:
+                log_message(f"[{bot_name}] ⚠️ Negăsit în inbox: '{target_clean}'")
+    except Exception as e:
+        log_message(f"[{bot_name}] ⚠️ Eroare la citirea inbox-ului: {str(e)}")
+    return resolved_threads
+
+
+def set_group_title(client, thread_id, desired_name):
+    tid = str(thread_id)
+    if hasattr(client, "direct_thread_update_title"):
+        return client.direct_thread_update_title(tid, desired_name)
+    if hasattr(client, "direct_update_title"):
+        return client.direct_update_title(tid, desired_name)
+    return client.private_request(
+        f"direct_v2/threads/{tid}/update_title/",
+        data={"title": desired_name},
     )
 
-    while not stop_event.is_set():
+
+def set_group_photo(client, thread_id, photo_path, bot_name="GroupGuard"):
+    tid = str(thread_id)
+    if not photo_path or not os.path.exists(photo_path):
+        raise FileNotFoundError(f"Fișierul foto lipsește: {photo_path}")
+
+    for method_name in ("direct_thread_update_photo", "direct_thread_update_image", "direct_update_photo"):
+        fn = getattr(client, method_name, None)
+        if callable(fn):
+            res = fn(tid, photo_path)
+            log_message(f"[{bot_name}] 🖼️ Poză trimisă prin {method_name} pe thread {tid}")
+            return res
+
+    with open(photo_path, "rb") as f:
+        img_bytes = f.read()
+
+    last_err = None
+    for endpoint in (
+        f"direct_v2/threads/{tid}/update_group_image/",
+        f"direct_v2/threads/{tid}/update_image/",
+    ):
         try:
-            thread = cl.direct_thread(thread_id)
-            current_title = getattr(thread, "thread_title", None) or getattr(thread, "title", None) or ""
+            res = client.private_request(
+                endpoint,
+                files={"image": ("group_photo.jpg", img_bytes, "image/jpeg")},
+            )
+            log_message(f"[{bot_name}] 🖼️ Poză trimisă prin {endpoint} pe thread {tid}")
+            return res
+        except Exception as e:
+            last_err = e
 
-            if cfg["protect_title"] and desired_title and current_title != desired_title:
-                set_group_title_compat(cl, thread_id, desired_title)
-                with state_lock:
-                    bot_status["last_action"] = f"Nume grup restaurat: {desired_title}"
-
-            if cfg["protect_photo"] and os.path.exists(GROUP_PHOTO_PATH):
-                set_group_photo_compat(cl, thread_id, GROUP_PHOTO_PATH)
-                with state_lock:
-                    bot_status["last_action"] = "Poză grup verificată/actualizată"
-
-            with state_lock:
-                bot_status["meta_checks"] += 1
-                bot_status["last_error"] = ""
-        except Exception as exc:
-            with state_lock:
-                bot_status["last_error"] = f"Eroare grup meta: {exc}"
-
-        if stop_event.wait(delay):
-            break
+    raise RuntimeError(f"Toate metodele de schimbare poză au eșuat: {last_err}")
 
 
-def controller_loop(cfg: dict) -> None:
-    try:
-        lookup_client = build_client(cfg["session_id"], cfg["proxy"])
-        thread_id = resolve_thread_id(lookup_client, cfg["group_target"])
-        with state_lock:
-            bot_status["last_action"] = f"Grup găsit (ID: {thread_id})"
-    except Exception as exc:
-        with state_lock:
-            bot_status["running"] = False
-            bot_status["last_error"] = f"Eroare găsire grup: {exc}"
-            bot_status["last_action"] = "Oprit"
+def group_meta_worker(client, thread_id, target_name, bot_name):
+    """Verifică și restaurează automat numele și poza grupului la intervalul setat (implicit 5s, 1 - 120s)"""
+    tid = str(thread_id)
+    while bot_status["running"]:
+        try:
+            desired_name = (bot_status.get("locked_group_name") or "").strip()
+            photo_path = (bot_status.get("locked_group_photo_path") or "").strip()
+
+            current_title = ""
+            try:
+                thread_obj = client.direct_thread(tid, amount=1)
+                current_title = (
+                    getattr(thread_obj, "thread_title", None)
+                    or getattr(thread_obj, "title", None)
+                    or ""
+                )
+            except Exception:
+                current_title = ""
+
+            if desired_name and current_title != desired_name:
+                set_group_title(client, tid, desired_name)
+                log_message(f"[{bot_name}] 🔒 Nume grup restaurat la '{desired_name}' pe '{target_name}'")
+
+            if photo_path and os.path.exists(photo_path):
+                set_group_photo(client, tid, photo_path, bot_name)
+                log_message(f"[{bot_name}] 🖼️ Poză grup restaurată pe '{target_name}'")
+
+            current_delay = max(1, min(120, int(bot_status.get("group_meta_delay", 5))))
+            for _ in range(current_delay * 10):
+                if not bot_status["running"]:
+                    break
+                time.sleep(0.1)
+        except Exception as e:
+            log_message(f"[{bot_name}] ⚠️ Eroare la actualizarea grupului '{target_name}': {str(e)}")
+            time.sleep(5)
+
+
+def spam_worker(client, thread_id, target_name, messages_list, bot_name, delay_seconds):
+    """Worker optimizat pentru grupuri cu pauză configurabilă (1 - 120s)"""
+    msg_idx = 0
+    sent_count = 0
+    while bot_status["running"]:
+        try:
+            msg = messages_list[msg_idx % len(messages_list)]
+            msg_idx += 1
+            client.direct_send(text=msg, thread_ids=[str(thread_id)])
+            sent_count += 1
+            log_message(f"[{bot_name}] 🚀 Trimis pe grupul '{target_name}' (Total: {sent_count})")
+
+            current_delay = max(1, min(120, int(bot_status.get("delay", delay_seconds))))
+            for _ in range(current_delay * 10):
+                if not bot_status["running"]:
+                    break
+                time.sleep(0.1)
+        except Exception as e:
+            log_message(f"[{bot_name}] ⚠️ Eroare pe grupul '{target_name}': {str(e)}")
+            time.sleep(5)
+
+
+def run_instagram_suite(session_id, group_targets, messages_list, bot_name, proxy_raw, delay_seconds):
+    """Pornește simultan worker-ele de mesaje și protecția de nume/poză grup pentru un cont"""
+    client = create_authed_client(session_id, proxy_raw, bot_name)
+    if not client:
         return
 
-    threads = []
-    if cfg["message_text"].strip():
-        t_msg = threading.Thread(target=spam_worker, args=(cfg, thread_id), daemon=True)
-        t_msg.start()
-        threads.append(t_msg)
+    resolved_threads = resolve_group_threads(client, group_targets, bot_name)
+    if not resolved_threads:
+        log_message(f"[{bot_name}] ❌ Niciun grup valid găsit. Opresc agentul.")
+        return
 
-    if cfg["protect_title"] or cfg["protect_photo"]:
-        t_meta = threading.Thread(target=group_meta_worker, args=(cfg, thread_id), daemon=True)
-        t_meta.start()
-        threads.append(t_meta)
+    has_messages = bool(messages_list)
+    has_group_meta = bool(
+        (bot_status.get("locked_group_name") or "").strip()
+        or (
+            bot_status.get("locked_group_photo_path")
+            and os.path.exists(bot_status.get("locked_group_photo_path"))
+        )
+    )
 
-    while not stop_event.is_set():
-        if threads and all(not t.is_alive() for t in threads):
-            break
-        time.sleep(1)
+    if not has_messages and not has_group_meta:
+        log_message(f"[{bot_name}] ⚠️ Nu ai setat mesaje, nume de grup sau poză de grup.")
+        return
 
-    with state_lock:
-        bot_status["running"] = False
-        if not bot_status["last_error"]:
-            bot_status["last_action"] = "Oprit"
+    for target_name, thread_id in resolved_threads.items():
+        if has_messages:
+            t_msg = threading.Thread(
+                target=spam_worker,
+                args=(client, thread_id, target_name, messages_list, bot_name, delay_seconds),
+            )
+            t_msg.daemon = True
+            t_msg.start()
+
+        if has_group_meta:
+            t_meta = threading.Thread(
+                target=group_meta_worker,
+                args=(client, thread_id, target_name, bot_name),
+            )
+            t_meta.daemon = True
+            t_meta.start()
+
+    log_message(
+        f"[{bot_name}] 🔥 Activ (Msg: {has_messages}, {delay_seconds}s | Grup Meta: {has_group_meta}, {bot_status.get('group_meta_delay', 5)}s)."
+    )
+
+    while bot_status["running"]:
+        time.sleep(0.5)
 
 
-@app.route("/", methods=["GET"])
+def clamp_seconds(raw_val, default_val):
+    try:
+        return max(1, min(120, int((raw_val or "").strip())))
+    except ValueError:
+        return default_val
+
+
+def save_uploaded_group_photo(file_storage):
+    if not file_storage or not file_storage.filename:
+        return None, None
+    raw_tmp = os.path.join(tempfile.gettempdir(), "kise_group_photo_raw")
+    jpg_tmp = os.path.join(tempfile.gettempdir(), "kise_group_photo.jpg")
+    file_storage.save(raw_tmp)
+
+    if Image is not None:
+        try:
+            with Image.open(raw_tmp) as im:
+                rgb_im = im.convert("RGB")
+                rgb_im.save(jpg_tmp, format="JPEG", quality=92)
+            return jpg_tmp, file_storage.filename
+        except Exception as e:
+            log_message(f"⚠️ Conversie JPG eșuată, folosesc fișierul direct: {str(e)}")
+
+    return raw_tmp, file_storage.filename
+
+
+@app.route("/", methods=["GET", "POST"])
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    global bot_status
+    delay_val = bot_status.get("delay", 50)
+    meta_delay_val = bot_status.get("group_meta_delay", 5)
+    locked_name_val = bot_status.get("locked_group_name", "")
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        delay_val = clamp_seconds(request.form.get("delay_seconds"), delay_val)
+        meta_delay_val = clamp_seconds(request.form.get("group_meta_delay"), meta_delay_val)
+        locked_name_val = (request.form.get("locked_group_name") or "").strip()
+
+        bot_status["delay"] = delay_val
+        bot_status["group_meta_delay"] = meta_delay_val
+        if locked_name_val:
+            bot_status["locked_group_name"] = locked_name_val
+
+        uploaded_photo = request.files.get("group_photo")
+        saved_photo_path, uploaded_filename = save_uploaded_group_photo(uploaded_photo)
+        if saved_photo_path:
+            bot_status["locked_group_photo_path"] = saved_photo_path
+            bot_status["locked_group_photo_name"] = uploaded_filename or "group_photo.jpg"
+            log_message(f"🖼️ Poză grup încărcată: '{bot_status['locked_group_photo_name']}' -> {saved_photo_path}")
+
+        sessions_raw = request.form.get("sessions", "")
+        groups_raw = request.form.get("groups", "")
+        messages_raw = request.form.get("messages", "")
+        proxy_raw = (request.form.get("proxy") or "").strip()
+
+        sessions = [s.strip() for s in sessions_raw.split(",") if s.strip()]
+        groups = [g.strip() for g in groups_raw.replace("\r", "").split("\n") if g.strip()]
+        messages = [m.strip() for m in messages_raw.replace("\r", "").split("\n") if m.strip()]
+
+        has_photo = bool(
+            bot_status.get("locked_group_photo_path")
+            and os.path.exists(bot_status.get("locked_group_photo_path"))
+        )
+
+        if action == "start" and not bot_status["running"]:
+            if sessions and groups and (messages or locked_name_val or has_photo):
+                bot_status["running"] = True
+                log_message(
+                    f"🚀 Sistem complet pornit pe {len(sessions)} conturi (Msg: {delay_val}s | Grup: {meta_delay_val}s)."
+                )
+
+                for idx, session in enumerate(sessions, start=1):
+                    bot_name = f"Agent #{idx}"
+                    t = threading.Thread(
+                        target=run_instagram_suite,
+                        args=(session, groups, messages, bot_name, proxy_raw, delay_val),
+                    )
+                    t.daemon = True
+                    t.start()
+
+        elif action == "stop":
+            bot_status["running"] = False
+            log_message("⏹️ S-a ordonat oprirea completă a sistemului.")
+
+    return render_template_string(
+        HTML_TEMPLATE,
+        running=bot_status["running"],
+        delay=delay_val,
+        group_meta_delay=meta_delay_val,
+        locked_group_name=bot_status.get("locked_group_name", ""),
+        locked_group_photo_name=bot_status.get("locked_group_photo_name", ""),
+        bg_image=BG_IMAGE_DATA_URI,
+    )
 
 
-@app.route("/status", methods=["GET"])
-def status():
-    with state_lock:
-        return jsonify(bot_status)
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ro" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🪽Kise Cagulă - Control Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        void: '#050203',
+                        smoke: '#0f0709',
+                        blood: '#dc2626',
+                        bloodglow: '#ef4444',
+                        bordercolor: '#3f111a'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
 
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #050203;
+            background-image:
+                linear-gradient(to bottom, rgba(5, 2, 3, 0.42), rgba(5, 2, 3, 0.72)),
+                {% if bg_image %}
+                url('{{ bg_image }}');
+                {% else %}
+                radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.35) 0%, rgba(5, 2, 3, 0.92) 75%);
+                {% endif %}
+            background-size: cover;
+            background-position: center center;
+            background-attachment: fixed;
+        }
 
-@app.route("/start", methods=["POST"])
-def start():
-    session_id = (request.form.get("session_id") or "").strip()
-    group_target = (request.form.get("group_target") or "").strip()
-    if not session_id or not group_target:
-        return jsonify({"error": "Session ID și numele/ID-ul grupului sunt obligatorii."}), 400
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .font-title { font-family: 'Cinzel', serif; }
 
-    photo_file = request.files.get("group_photo")
-    photo_saved = False
-    if photo_file and photo_file.filename:
-        save_processed_photo(photo_file)
-        photo_saved = True
+        .glass-smoke {
+            background: rgba(15, 7, 9, 0.56);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(220, 38, 38, 0.35);
+            box-shadow: 0 0 40px rgba(220, 38, 38, 0.2), inset 0 0 15px rgba(220, 38, 38, 0.05);
+        }
 
-    protect_photo = bool(request.form.get("protect_photo"))
-    if protect_photo and not (photo_saved or os.path.exists(GROUP_PHOTO_PATH)):
-        return jsonify({"error": "Bifează 'Menține poză' doar după ce încarci o imagine."}), 400
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #050203; }
+        ::-webkit-scrollbar-thumb { background: #3f111a; border-radius: 4px; }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen py-10 px-4 sm:px-6 lg:px-8 flex flex-col justify-between selection:bg-blood selection:text-white">
 
-    with state_lock:
-        if bot_status["running"]:
-            return jsonify({"error": "Botul rulează deja."}), 400
+    <div class="max-w-2xl mx-auto w-full space-y-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between glass-smoke p-6 rounded-2xl shadow-2xl">
+            <div class="flex items-center gap-3.5">
+                <span class="p-3 bg-blood/20 text-bloodglow rounded-xl border border-blood/40 text-xl shadow-lg shadow-blood/30 animate-pulse">🪽</span>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-black tracking-wider text-white font-title drop-shadow-[0_2px_10px_rgba(239,68,68,0.8)]">🪽Kise Cagulă</h1>
+                    <p class="text-[11px] text-rose-400 font-mono tracking-widest uppercase">MSG {{ delay }}s // GROUP {{ group_meta_delay }}s</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border {% if running %}bg-blood/30 border-blood/60 text-rose-200 shadow-lg shadow-blood/40{% else %}bg-black/60 border-rose-950 text-slate-400{% endif %} text-xs font-medium">
+                <span class="w-2 h-2 rounded-full {% if running %}bg-bloodglow animate-ping{% else %}bg-slate-600{% endif %}"></span>
+                <span>{% if running %}ACTIV{% else %}STANDBY{% endif %}</span>
+            </div>
+        </div>
 
-        bot_config.update({
-            "session_id": session_id,
-            "proxy": (request.form.get("proxy") or "").strip(),
-            "group_target": group_target,
-            "message_text": request.form.get("message_text") or "",
-            "msg_delay": parse_float_safe(request.form.get("msg_delay"), 0.1, 0.1, 3600.0),
-            "group_title": (request.form.get("group_title") or "").strip(),
-            "meta_delay": parse_float_safe(request.form.get("meta_delay"), 5.0, 1.0, 120.0),
-            "protect_title": bool(request.form.get("protect_title")),
-            "protect_photo": protect_photo,
-        })
+        <!-- Main Card -->
+        <div class="glass-smoke p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
+            <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Session ID (Cookie)</label>
+                    <textarea name="sessions" rows="2" placeholder="introdu sessionid-ul aici..." class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner font-mono"></textarea>
+                </div>
 
-        stop_event.clear()
-        bot_status["running"] = True
-        bot_status["last_error"] = ""
-        bot_status["msg_count"] = 0
-        bot_status["meta_checks"] = 0
-        bot_status["last_action"] = "Se caută grupul..."
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Grupuri Țintă (câte unul pe rând)</label>
+                        <textarea name="groups" rows="3" placeholder="Grup 1&#10;Grup 2" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Mesaje de Trimis</label>
+                        <textarea name="messages" rows="3" placeholder="Mesaj 1&#10;Mesaj 2" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blood focus:ring-1 focus:ring-blood transition shadow-inner"></textarea>
+                    </div>
+                </div>
 
-        cfg_copy = dict(bot_config)
+                <!-- Nume Grup + Poză Grup + Secunde Grup (implicit 5s, 1 - 120s) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-1">
+                    <div>
+                        <label for="locked_group_name" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Nume Grup Dorit</label>
+                        <input id="locked_group_name" type="text" name="locked_group_name" value="{{ locked_group_name }}" placeholder="ex: 🪽Kise Cagulă" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm text-rose-100 placeholder-slate-500 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                    <div>
+                        <label for="group_photo" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Poză Grup (Fișier)</label>
+                        <input id="group_photo" type="file" name="group_photo" accept="image/*" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-3 py-2.5 text-xs text-rose-200 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border file:border-red-500/40 file:text-xs file:font-semibold file:bg-red-900/50 file:text-rose-100 hover:file:bg-red-800/60 focus:outline-none focus:border-blood transition shadow-inner cursor-pointer">
+                        {% if locked_group_photo_name %}
+                            <p class="text-[11px] text-rose-300/80 font-mono mt-1 truncate">Activă: {{ locked_group_photo_name }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label for="group_meta_delay" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde Grup (1 - 120)</label>
+                        <input id="group_meta_delay" type="number" name="group_meta_delay" min="1" max="120" value="{{ group_meta_delay }}" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                </div>
 
-    threading.Thread(target=controller_loop, args=(cfg_copy,), daemon=True).start()
-    return jsonify({"ok": True})
+                <div>
+                    <input id="group_meta_slider" type="range" min="1" max="120" value="{{ group_meta_delay }}" class="w-full accent-red-600 cursor-pointer">
+                </div>
 
+                <!-- Proxy HTTP + Secunde Mesaje -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-2 border-t border-rose-950/60">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Proxy HTTP</label>
+                        <input type="text" name="proxy" value="38.154.185.97:6370:fvuubeod:0xk9re2xi909" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                    <div>
+                        <label for="delay_seconds" class="block text-xs font-semibold uppercase tracking-wider text-rose-300 mb-1.5">Secunde Msg (1 - 120)</label>
+                        <input id="delay_seconds" type="number" name="delay_seconds" min="1" max="120" value="{{ delay }}" class="w-full bg-black/60 border border-rose-900/50 rounded-xl px-4 py-3 text-sm font-mono text-rose-200 focus:outline-none focus:border-blood transition shadow-inner">
+                    </div>
+                </div>
 
-@app.route("/stop", methods=["POST"])
-def stop():
-    stop_event.set()
-    with state_lock:
-        bot_status["running"] = False
-        bot_status["last_action"] = "Oprit manual"
-    return jsonify({"ok": True})
+                <div>
+                    <input id="delay_slider" type="range" min="1" max="120" value="{{ delay }}" class="w-full accent-red-600 cursor-pointer">
+                </div>
 
+                <!-- Un singur buton pentru pornirea/oprirea tuturor funcțiilor -->
+                <div class="pt-3">
+                    {% if running %}
+                        <button type="submit" name="action" value="stop" class="w-full py-4 px-4 bg-gradient-to-r from-red-800 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white font-bold tracking-wider rounded-xl shadow-lg shadow-red-900/60 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-500/50">
+                            <span>⏹ OPREȘTE SISTEMUL</span>
+                        </button>
+                    {% else %}
+                        <button type="submit" name="action" value="start" class="w-full py-4 px-4 bg-gradient-to-r from-red-700 via-rose-600 to-blood hover:from-red-600 hover:to-rose-500 text-white font-bold tracking-wider rounded-xl shadow-xl shadow-blood/50 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm font-title border border-red-400/50">
+                            <span>🔥 PORNEȘTE SISTEMUL</span>
+                        </button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <footer class="text-center text-xs text-rose-400/70 font-mono tracking-widest mt-8 drop-shadow">
+        // 🪽Kise Cagulă &bull; GENERATION OF MIRACLES //
+    </footer>
+
+    <script>
+        function syncPair(inputId, sliderId, fallbackVal) {
+            const inp = document.getElementById(inputId);
+            const sld = document.getElementById(sliderId);
+            if (!inp || !sld) return;
+            sld.addEventListener('input', () => {
+                inp.value = sld.value;
+            });
+            inp.addEventListener('input', () => {
+                let val = parseInt(inp.value || String(fallbackVal), 10);
+                if (val < 1) val = 1;
+                if (val > 120) val = 120;
+                sld.value = val;
+            });
+        }
+
+        syncPair('delay_seconds', 'delay_slider', 50);
+        syncPair('group_meta_delay', 'group_meta_slider', 5);
+
+        {% if running %}
+        setTimeout(() => {
+            location.reload();
+        }, 3000);
+        {% endif %}
+    </script>
+</body>
+</html>
+"""
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
